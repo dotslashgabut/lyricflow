@@ -4,7 +4,7 @@ LyricFlow is a modern web application that uses Google's **Gemini 2.5 Flash** mo
 
 It features a high-precision audio player with synchronized text highlighting, allowing you to review and download your transcriptions instantly.
 
-[**Open App in AI Studio**](https://aistudio.google.com/app/[YOUR_APP_ID]?showPreview=true&fullscreenApplet=true&showAssistant=true) _(Replace [YOUR_APP_ID] with your actual App ID)_
+[**Open App in AI Studio**](https://ai.studio/apps/drive/1M1VfxdBlNB_eOPQqQiHspvVwizaEs0aI?showPreview=true&fullscreenApplet=true&showAssistant=true)
 
 ## ✨ Features
 
