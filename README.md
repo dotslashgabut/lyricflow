@@ -1,20 +1,72 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# LyricFlow - AI Subtitle & Lyric Generator
 
-# Run and deploy your AI Studio app
+LyricFlow is a modern web application that uses Google's **Gemini 2.5 Flash** model to convert audio files and voice recordings into perfectly timed subtitles (`.srt`) and lyrics (`.lrc`). 
 
-This contains everything you need to run your app locally.
+It features a high-precision audio player with synchronized text highlighting, allowing you to review and download your transcriptions instantly.
 
-View your app in AI Studio: https://ai.studio/apps/drive/1M1VfxdBlNB_eOPQqQiHspvVwizaEs0aI
+[**Open App in AI Studio**](https://aistudio.google.com/app/[YOUR_APP_ID]?showPreview=true&fullscreenApplet=true&showAssistant=true) _(Replace [YOUR_APP_ID] with your actual App ID)_
 
-## Run Locally
+## ✨ Features
 
-**Prerequisites:**  Node.js
+*   **Dual Input Modes**: 
+    *   **File Upload**: Supports MP3, WAV, M4A (up to 15MB).
+    *   **Microphone**: Real-time in-browser recording with audio visualization.
+*   **AI-Powered Precision**: 
+    *   Uses `gemini-2.5-flash` for high-speed, accurate transcription.
+    *   **Thinking Config** enabled to reduce hallucinations and ensure mathematical accuracy in timestamps.
+    *   Strict `MM:SS.mmm` timing enforcement.
+*   **Interactive Results View**:
+    *   **Synchronized Playback**: Text highlights in real-time as audio plays.
+    *   **Click-to-Seek**: Click any subtitle line to jump audio to that exact timestamp.
+    *   **Auto-Scroll**: The view automatically follows the active line.
+*   **Export Formats**:
+    *   **SRT** (SubRip Subtitle): Standard format for video players (YouTube, VLC).
+    *   **LRC** (Lyric File): Standard format for music players (Karaoke, Spotify-style).
 
+## 🛠️ Tech Stack
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+*   **Frontend**: React 19, TypeScript
+*   **Styling**: Tailwind CSS (Dark Mode)
+*   **AI Integration**: Google Gen AI SDK (`@google/genai`)
+*   **Icons**: Lucide React
+*   **Tooling**: Vite-compatible structure
+
+## 🚀 Usage
+
+1.  **Select Input**:
+    *   Upload an existing audio file.
+    *   Or, record your voice directly in the browser.
+2.  **Transcribe**:
+    *   Click "Generate Subtitles".
+    *   The app sends the audio to Gemini 2.5 Flash to analyze speech and timing.
+3.  **Review & Export**:
+    *   Play the audio to verify synchronization.
+    *   Download the `.srt` or `.lrc` files to use with your media.
+
+## 🔧 Configuration
+
+This application requires a valid Google Gemini API Key.
+
+1.  The app expects `process.env.API_KEY` to be available.
+2.  The AI model used is `gemini-2.5-flash` with a configured `thinkingBudget` of 2048 tokens to ensure timestamp accuracy.
+
+## 📝 Formats Supported
+
+**SRT (SubRip)**
+```text
+1
+00:00:28,106 --> 00:00:34,510
+Lyrics line one...
+```
+
+**LRC (Lyrics)**
+```text
+[ti:Song Title]
+[ar:Artist]
+[00:28.11]Lyrics line one...
+[00:34.51]Lyrics line two...
+```
+
+## ⚠️ Note on Accuracy
+
+While Gemini 2.5 Flash is extremely capable, audio with heavy background noise or unclear vocals may impact transcription accuracy. The app includes post-processing logic to mitigate common LLM timestamp hallucinations.
