@@ -9,11 +9,12 @@ It features a high-precision audio player with synchronized text highlighting, a
 ## ✨ Features
 
 *   **Dual Input Modes**: 
-    *   **File Upload**: Supports MP3, WAV, M4A, OGG, FLAC (up to 12MB).
+    *   **File Upload**: Supports MP3, WAV, M4A, OGG, FLAC (up to 15MB).
     *   **Microphone**: Real-time in-browser recording with audio visualization.
 *   **AI-Powered Precision**: 
     *   Uses `gemini-2.5-flash` for high-speed, accurate transcription.
-    *   Strict `MM:SS.mmm` timing enforcement to ensure timestamp accuracy.
+    *   **Thinking Config** enabled to reduce hallucinations and ensure mathematical accuracy in timestamps.
+    *   Strict `MM:SS.mmm` timing enforcement.
 *   **Interactive Results View**:
     *   **Synchronized Playback**: Text highlights in real-time as audio plays.
     *   **Click-to-Seek**: Click any subtitle line to jump audio to that exact timestamp.
@@ -30,31 +31,6 @@ It features a high-precision audio player with synchronized text highlighting, a
 *   **Icons**: Lucide React
 *   **Tooling**: Vite-compatible structure
 
-## 💻 Run Locally
-
-1. **Prerequisites**: [Node.js](https://nodejs.org/)
-2. **Clone this repository**
-   Clone or download this repository
-   ```bash
-   git clone https://github.com/dotslashgabut/lyricflow.git
-   ```
-   ```bash
-   cd lyricflow
-   ```
-3. **Install dependencies**:
-   ```bash
-   npm install
-   ```
-4. **Set the API Key**:
-   Create or edit a `.env.local` file in the root directory and set `API_KEY` to your Gemini API key:
-   ```env
-   API_KEY=PLACEHOLDER_API_KEY
-   ```
-5. **Run the app**:
-   ```bash
-   npm run dev
-   ```
-
 ## 🚀 Usage
 
 1.  **Select Input**:
@@ -67,12 +43,61 @@ It features a high-precision audio player with synchronized text highlighting, a
     *   Play the audio to verify synchronization.
     *   Download the `.srt` or `.lrc` files to use with your media.
 
+## 💻 Run Locally
+
+To run this application on your local machine, you'll need [Node.js](https://nodejs.org/) (v18+) and [npm](https://www.npmjs.com/) installed.
+
+1.  **Initialize a project**:
+    ```bash
+    npm create vite@latest lyricflow -- --template react-ts
+    cd lyricflow
+    ```
+
+2.  **Install dependencies**:
+    ```bash
+    npm install @google/genai lucide-react
+    # Optional: Install Tailwind CSS via npm if you prefer over CDN
+    npm install -D tailwindcss postcss autoprefixer
+    npx tailwindcss init -p
+    ```
+
+3.  **Copy Files**:
+    Copy the provided source files (`App.tsx`, `types.ts`, etc.) into the `src/` folder of your new project.
+
+4.  **Configure Environment**:
+    Create a `.env` file in the root directory and add your API key:
+    ```env
+    API_KEY=your_actual_gemini_api_key_here
+    ```
+
+    *Note: You may need to update `vite.config.ts` to expose the `API_KEY` to `process.env` for the app to read it correctly:*
+    ```ts
+    // vite.config.ts
+    import { defineConfig, loadEnv } from 'vite'
+    import react from '@vitejs/plugin-react'
+
+    export default defineConfig(({ mode }) => {
+      const env = loadEnv(mode, process.cwd(), '');
+      return {
+        plugins: [react()],
+        define: {
+          'process.env.API_KEY': JSON.stringify(env.API_KEY)
+        }
+      }
+    })
+    ```
+
+5.  **Start the App**:
+    ```bash
+    npm run dev
+    ```
+
 ## 🔧 Configuration
 
 This application requires a valid Google Gemini API Key.
 
 1.  The app expects `process.env.API_KEY` to be available.
-2.  The AI model used is `gemini-2.5-flash`.
+2.  The AI model used is `gemini-2.5-flash` with a configured `thinkingBudget` of 2048 tokens to ensure timestamp accuracy.
 
 ## 📝 Formats Supported
 

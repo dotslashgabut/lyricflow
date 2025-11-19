@@ -47,7 +47,8 @@ export const transcribeAudio = async (
         ]
       },
       config: {
-        // Disabled thinking config to ensure stability and reduce potential 400/500 errors
+        // Enable thinking to improve math/timing logic and prevent hallucinations
+        thinkingConfig: { thinkingBudget: 2048 },
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.ARRAY,
