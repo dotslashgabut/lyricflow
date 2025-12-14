@@ -1,5 +1,5 @@
-import React, { useState, useRef, useCallback } from 'react';
-import { Mic, Upload, FileAudio, X, Loader2, ArrowRight, Wand2 } from 'lucide-react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
+import { Mic, Upload, FileAudio, X, Loader2, ArrowRight, Wand2, Maximize, Minimize } from 'lucide-react';
 import { AppState, SubtitleSegment, AudioSource } from './types';
 import { transcribeAudio, fileToBase64 } from './services/geminiService';
 import AudioVisualizer from './components/AudioVisualizer';
@@ -16,12 +16,35 @@ const App: React.FC = () => {
   const [recordingDuration, setRecordingDuration] = useState(0);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<number | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // --- Fullscreen Logic ---
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    };
+  }, []);
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch((err) => {
+        console.error(`Error enabling fullscreen mode: ${err.message}`);
+      });
+    } else {
+      document.exitFullscreen();
+    }
+  };
 
   // --- File Processing Helper ---
   const processFile = (file: File) => {
@@ -187,8 +210,17 @@ const App: React.FC = () => {
             </div>
             <h1 className="text-xl font-bold tracking-tight text-white">LyricFlow</h1>
           </div>
-          <div className="text-xs font-medium px-3 py-1 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-            Powered by Gemini 2.5 Flash
+          <div className="flex items-center gap-4">
+            <div className="hidden sm:block text-xs font-medium px-3 py-1 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+              Powered by Gemini 2.5 Flash
+            </div>
+            <button 
+              onClick={toggleFullscreen}
+              className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+              title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
+            >
+              {isFullscreen ? <Minimize size={20} /> : <Maximize size={20} />}
+            </button>
           </div>
         </div>
       </header>
