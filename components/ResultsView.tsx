@@ -50,10 +50,15 @@ const ResultsView: React.FC<ResultsViewProps> = ({ segments, onReset, audioName,
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   
-  // Refs for aborting export
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  // Audio nodes persist to avoid "re-creation" errors
   const audioContextRef = useRef<AudioContext | null>(null);
+  const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  
+  // Rendering state refs
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const animationFrameRef = useRef<number | null>(null);
+  const isAbortedRef = useRef<boolean>(false);
 
   useEffect(() => {
     const nameWithoutExt = audioName.replace(/\.[^/.]+$/, "");
@@ -64,7 +69,13 @@ const ResultsView: React.FC<ResultsViewProps> = ({ segments, onReset, audioName,
     if (audioFile) {
       const url = URL.createObjectURL(audioFile);
       setAudioUrl(url);
-      return () => URL.revokeObjectURL(url);
+      return () => {
+        URL.revokeObjectURL(url);
+        if (audioContextRef.current) {
+          audioContextRef.current.close().catch(() => {});
+          audioContextRef.current = null;
+        }
+      };
     }
   }, [audioFile]);
 
@@ -103,16 +114,13 @@ const ResultsView: React.FC<ResultsViewProps> = ({ segments, onReset, audioName,
   };
 
   const abortExport = () => {
+    isAbortedRef.current = true;
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
     }
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.currentTime = 0;
-    }
-    if (audioContextRef.current) {
-      audioContextRef.current.close();
-      audioContextRef.current = null;
     }
     if (animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current);
@@ -126,9 +134,10 @@ const ResultsView: React.FC<ResultsViewProps> = ({ segments, onReset, audioName,
     
     setIsExporting(true);
     setExportProgress(0);
+    isAbortedRef.current = false;
     
     const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d')!;
+    const ctx = canvas.getContext('2d', { alpha: false })!;
     const audio = audioRef.current;
     
     const isHD = resolution === '1080p';
@@ -149,17 +158,40 @@ const ResultsView: React.FC<ResultsViewProps> = ({ segments, onReset, audioName,
     canvas.width = width;
     canvas.height = height;
 
-    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-    audioContextRef.current = audioContext;
-    const source = audioContext.createMediaElementSource(audio);
+    // Persist AudioContext to avoid multiple creations
+    if (!audioContextRef.current) {
+      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+    }
+    const audioContext = audioContextRef.current;
     
-    const analyser = audioContext.createAnalyser();
-    analyser.fftSize = 256;
+    // Resume context if suspended (common in browsers after inactivity)
+    if (audioContext.state === 'suspended') {
+      await audioContext.resume();
+    }
+
+    // Persist SourceNode to avoid "MediaElementAudioSourceNode has already been created" error
+    if (!sourceNodeRef.current) {
+      sourceNodeRef.current = audioContext.createMediaElementSource(audio);
+    }
+    const source = sourceNodeRef.current;
+
+    // Persist Analyser
+    if (!analyserRef.current) {
+      analyserRef.current = audioContext.createAnalyser();
+      analyserRef.current.fftSize = 256;
+    }
+    const analyser = analyserRef.current;
     const bufferLength = analyser.frequencyBinCount;
     const dataArray = new Uint8Array(bufferLength);
     
+    // Create fresh destination for this specific recording session
     const dest = audioContext.createMediaStreamDestination();
     
+    // Clean connections from previous exports
+    source.disconnect();
+    analyser.disconnect();
+    
+    // Set up chain
     source.connect(analyser);
     analyser.connect(dest);
     analyser.connect(audioContext.destination);
@@ -170,29 +202,41 @@ const ResultsView: React.FC<ResultsViewProps> = ({ segments, onReset, audioName,
       ...dest.stream.getAudioTracks()
     ]);
 
+    const supportedMimeTypes = [
+      'video/webm;codecs=vp9,opus',
+      'video/webm;codecs=vp8,opus',
+      'video/webm',
+      'video/mp4'
+    ];
+    const mimeType = supportedMimeTypes.find(type => MediaRecorder.isTypeSupported(type)) || '';
+
     const mediaRecorder = new MediaRecorder(combinedStream, {
-      mimeType: 'video/webm;codecs=vp9',
-      videoBitsPerSecond: isHD ? 16000000 : 8000000
+      mimeType: mimeType,
+      videoBitsPerSecond: isHD ? 12000000 : 6000000
     });
     mediaRecorderRef.current = mediaRecorder;
 
     const chunks: Blob[] = [];
-    mediaRecorder.ondataavailable = (e) => chunks.push(e.data);
+    mediaRecorder.ondataavailable = (e) => {
+      if (e.data.size > 0) chunks.push(e.data);
+    };
+
     mediaRecorder.onstop = () => {
-      // Only download if we didn't just cancel manually
-      if (isExporting && chunks.length > 0) {
-        const blob = new Blob(chunks, { type: 'video/webm' });
+      if (!isAbortedRef.current && chunks.length > 0) {
+        const blob = new Blob(chunks, { type: mimeType.split(';')[0] || 'video/webm' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `${metadata.title || 'lyricflow_pro'}.webm`;
+        const baseName = metadata.title.trim() || audioName.replace(/\.[^/.]+$/, "");
+        const safeName = baseName.replace(/[^a-z0-9_\-\s]/gi, '').trim() || 'lyricflow_pro';
+        a.download = `${safeName}.webm`;
+        document.body.appendChild(a);
         a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
       }
       setIsExporting(false);
-      if (audioContextRef.current) {
-        audioContextRef.current.close();
-        audioContextRef.current = null;
-      }
+      setExportProgress(0);
     };
 
     mediaRecorder.start();
@@ -200,6 +244,8 @@ const ResultsView: React.FC<ResultsViewProps> = ({ segments, onReset, audioName,
     audio.play();
 
     const drawFrame = () => {
+      if (isAbortedRef.current) return;
+
       if (audio.paused || audio.ended) {
         if (mediaRecorder.state === 'recording') mediaRecorder.stop();
         return;
@@ -290,11 +336,11 @@ const ResultsView: React.FC<ResultsViewProps> = ({ segments, onReset, audioName,
         ctx.restore();
       }
 
-      // 4. METADATA FOOTER - FIXED CENTERING
+      // 4. METADATA FOOTER
       ctx.save();
       ctx.globalAlpha = 0.4;
       ctx.fillStyle = 'white';
-      ctx.textAlign = 'center'; // Explicitly set centering
+      ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.font = `600 ${width / 45}px sans-serif`;
       const displayMeta = `${metadata.title}${metadata.artist ? ' • ' + metadata.artist : ''}`;
@@ -310,7 +356,7 @@ const ResultsView: React.FC<ResultsViewProps> = ({ segments, onReset, audioName,
 
   return (
     <div className="w-full max-w-5xl mx-auto animate-fade-in mb-24">
-      <div className="bg-slate-900 rounded-3xl shadow-2xl overflow-hidden border border-slate-800">
+      <div className="bg-slate-900 rounded-3xl shadow-2xl overflow-hidden border border-slate-800 relative">
         
         {/* Header */}
         <div className="p-6 border-b border-slate-800 flex flex-col md:flex-row justify-between items-center gap-6 bg-slate-900/40">
@@ -539,7 +585,16 @@ const ResultsView: React.FC<ResultsViewProps> = ({ segments, onReset, audioName,
           </div>
         )}
 
-        <canvas ref={canvasRef} className="hidden" />
+        {/* 
+          CRITICAL: We don't use 'hidden' (display: none) because some browsers stop painting 
+          hidden elements, causing MediaRecorder to capture empty frames. 
+          Instead we use opacity-0 and pointer-events-none to keep it in the render tree.
+        */}
+        <canvas 
+          ref={canvasRef} 
+          className="opacity-0 pointer-events-none absolute -z-10" 
+          style={{ width: '1px', height: '1px' }}
+        />
       </div>
     </div>
   );
