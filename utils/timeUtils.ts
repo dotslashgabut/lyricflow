@@ -71,17 +71,34 @@ export const generateLRC = (
     by?: string;
   }
 ): string => {
-  let output = '';
-  if (metadata?.title) output += `[ti:${metadata.title}]\n`;
-  if (metadata?.artist) output += `[ar:${metadata.artist}]\n`;
-  if (metadata?.album) output += `[al:${metadata.album}]\n`;
-  if (metadata?.by) output += `[by:${metadata.by || 'LyricFlow AI'}]\n`;
+  let lines: string[] = [];
   
-  output += segments.map(seg => {
-    return `${formatToLRCTime(seg.start)}${seg.text}`;
-  }).join('\n');
+  // Headers
+  if (metadata?.title) lines.push(`[ti:${metadata.title}]`);
+  if (metadata?.artist) lines.push(`[ar:${metadata.artist}]`);
+  if (metadata?.album) lines.push(`[al:${metadata.album}]`);
+  lines.push(`[by:${metadata?.by || 'LyricFlow AI'}]`);
   
-  return output;
+  // Content
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i];
+    
+    // Add the current line
+    lines.push(`${formatToLRCTime(seg.start)}${seg.text}`);
+    
+    // Gap check: if gap to next segment is > 4 seconds, add a "clear" timestamp
+    // The clear timestamp is set to end_time + 4 seconds as per user's request
+    if (i < segments.length - 1) {
+      const nextSeg = segments[i + 1];
+      const gap = nextSeg.start - seg.end;
+      
+      if (gap > 4.0) {
+        lines.push(`${formatToLRCTime(seg.end + 4.0)}`);
+      }
+    }
+  }
+  
+  return lines.join('\n');
 };
 
 export const formatDuration = (seconds: number): string => {
