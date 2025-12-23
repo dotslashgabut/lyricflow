@@ -18,7 +18,8 @@ import {
   Sparkles,
   Layers,
   Activity,
-  XCircle
+  XCircle,
+  Palette
 } from 'lucide-react';
 
 interface ResultsViewProps {
@@ -30,12 +31,22 @@ interface ResultsViewProps {
 
 type Resolution = '720p' | '1080p';
 
+const PRESET_COLORS = [
+  { name: 'Midnight', hex: '#020617', secondary: '#1e1b4b' },
+  { name: 'Deep Sea', hex: '#082f49', secondary: '#0c4a6e' },
+  { name: 'Burgundy', hex: '#450a0a', secondary: '#7f1d1d' },
+  { name: 'Emerald', hex: '#064e3b', secondary: '#065f46' },
+  { name: 'Volcano', hex: '#431407', secondary: '#7c2d12' },
+  { name: 'Obsidian', hex: '#18181b', secondary: '#27272a' },
+];
+
 const ResultsView: React.FC<ResultsViewProps> = ({ segments, onReset, audioName, audioFile }) => {
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [activeIndex, setActiveIndex] = useState(-1);
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>('16:9');
   const [resolution, setResolution] = useState<Resolution>('1080p');
+  const [bgColor, setBgColor] = useState(PRESET_COLORS[0].hex);
   const [isExporting, setIsExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
   
@@ -50,12 +61,10 @@ const ResultsView: React.FC<ResultsViewProps> = ({ segments, onReset, audioName,
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   
-  // Audio nodes persist to avoid "re-creation" errors
   const audioContextRef = useRef<AudioContext | null>(null);
   const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   
-  // Rendering state refs
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const isAbortedRef = useRef<boolean>(false);
@@ -158,24 +167,20 @@ const ResultsView: React.FC<ResultsViewProps> = ({ segments, onReset, audioName,
     canvas.width = width;
     canvas.height = height;
 
-    // Persist AudioContext to avoid multiple creations
     if (!audioContextRef.current) {
       audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
     }
     const audioContext = audioContextRef.current;
     
-    // Resume context if suspended (common in browsers after inactivity)
     if (audioContext.state === 'suspended') {
       await audioContext.resume();
     }
 
-    // Persist SourceNode to avoid "MediaElementAudioSourceNode has already been created" error
     if (!sourceNodeRef.current) {
       sourceNodeRef.current = audioContext.createMediaElementSource(audio);
     }
     const source = sourceNodeRef.current;
 
-    // Persist Analyser
     if (!analyserRef.current) {
       analyserRef.current = audioContext.createAnalyser();
       analyserRef.current.fftSize = 256;
@@ -184,14 +189,11 @@ const ResultsView: React.FC<ResultsViewProps> = ({ segments, onReset, audioName,
     const bufferLength = analyser.frequencyBinCount;
     const dataArray = new Uint8Array(bufferLength);
     
-    // Create fresh destination for this specific recording session
     const dest = audioContext.createMediaStreamDestination();
     
-    // Clean connections from previous exports
     source.disconnect();
     analyser.disconnect();
     
-    // Set up chain
     source.connect(analyser);
     analyser.connect(dest);
     analyser.connect(audioContext.destination);
@@ -243,6 +245,10 @@ const ResultsView: React.FC<ResultsViewProps> = ({ segments, onReset, audioName,
     audio.currentTime = 0;
     audio.play();
 
+    // Find the secondary color for the gradient based on selection
+    const selectedPreset = PRESET_COLORS.find(p => p.hex === bgColor);
+    const secondaryColor = selectedPreset ? selectedPreset.secondary : '#000000';
+
     const drawFrame = () => {
       if (isAbortedRef.current) return;
 
@@ -253,8 +259,8 @@ const ResultsView: React.FC<ResultsViewProps> = ({ segments, onReset, audioName,
 
       // 1. CLEAR & BACKGROUND
       const bgGrad = ctx.createLinearGradient(0, 0, 0, height);
-      bgGrad.addColorStop(0, '#020617'); 
-      bgGrad.addColorStop(1, '#1e1b4b');
+      bgGrad.addColorStop(0, bgColor); 
+      bgGrad.addColorStop(1, secondaryColor);
       ctx.fillStyle = bgGrad;
       ctx.fillRect(0, 0, width, height);
 
@@ -280,9 +286,9 @@ const ResultsView: React.FC<ResultsViewProps> = ({ segments, onReset, audioName,
         const y = height - barH;
 
         const barGrad = ctx.createLinearGradient(0, height - visualizerHeight, 0, height);
-        barGrad.addColorStop(1, 'rgba(79, 70, 229, 0.4)');
-        barGrad.addColorStop(0.5, 'rgba(129, 140, 248, 0.2)');
-        barGrad.addColorStop(0, 'rgba(129, 140, 248, 0)');
+        barGrad.addColorStop(1, 'rgba(255, 255, 255, 0.2)');
+        barGrad.addColorStop(0.5, 'rgba(255, 255, 255, 0.1)');
+        barGrad.addColorStop(0, 'rgba(255, 255, 255, 0)');
 
         ctx.fillStyle = barGrad;
         ctx.beginPath();
@@ -411,7 +417,7 @@ const ResultsView: React.FC<ResultsViewProps> = ({ segments, onReset, audioName,
             </div>
             <div>
               <p className="text-sm font-bold text-white">Video & Metadata Configuration</p>
-              <p className="text-xs text-slate-500">Edit titles, aspect ratio, and resolution</p>
+              <p className="text-xs text-slate-500">Edit titles, aspect ratio, resolution, and background</p>
             </div>
           </div>
           <div className="text-slate-500 group-hover:text-slate-300">
@@ -421,6 +427,7 @@ const ResultsView: React.FC<ResultsViewProps> = ({ segments, onReset, audioName,
 
         {isSettingsOpen && (
           <div className="p-8 bg-slate-900/60 border-b border-slate-800 animate-fade-in-down grid grid-cols-1 lg:grid-cols-2 gap-10">
+            {/* Column 1: Metadata */}
             <div className="space-y-6">
               <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
                 <TypeIcon size={14} /> Track Information
@@ -456,8 +463,38 @@ const ResultsView: React.FC<ResultsViewProps> = ({ segments, onReset, audioName,
                   />
                 </div>
               </div>
+
+              {/* Background Color Picker */}
+              <div className="pt-4 space-y-4">
+                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                  <Palette size={14} /> Background Style
+                </h3>
+                <div className="flex flex-wrap gap-3">
+                  {PRESET_COLORS.map((preset) => (
+                    <button
+                      key={preset.name}
+                      onClick={() => setBgColor(preset.hex)}
+                      title={preset.name}
+                      className={`w-10 h-10 rounded-full border-2 transition-all transform hover:scale-110 ${
+                        bgColor === preset.hex ? 'border-indigo-400 scale-110 shadow-lg shadow-indigo-500/30' : 'border-transparent'
+                      }`}
+                      style={{ backgroundColor: preset.hex }}
+                    />
+                  ))}
+                  <div className="flex items-center gap-2 pl-2 border-l border-slate-800">
+                    <input 
+                      type="color" 
+                      value={bgColor}
+                      onChange={(e) => setBgColor(e.target.value)}
+                      className="w-10 h-10 rounded-full bg-transparent border-none cursor-pointer p-0 overflow-hidden"
+                    />
+                    <span className="text-[10px] font-bold text-slate-500 uppercase">Custom</span>
+                  </div>
+                </div>
+              </div>
             </div>
 
+            {/* Column 2: Layout */}
             <div className="space-y-8">
               <div className="space-y-4">
                 <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">
@@ -585,11 +622,6 @@ const ResultsView: React.FC<ResultsViewProps> = ({ segments, onReset, audioName,
           </div>
         )}
 
-        {/* 
-          CRITICAL: We don't use 'hidden' (display: none) because some browsers stop painting 
-          hidden elements, causing MediaRecorder to capture empty frames. 
-          Instead we use opacity-0 and pointer-events-none to keep it in the render tree.
-        */}
         <canvas 
           ref={canvasRef} 
           className="opacity-0 pointer-events-none absolute -z-10" 
