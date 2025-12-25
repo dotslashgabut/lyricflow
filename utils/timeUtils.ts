@@ -1,3 +1,4 @@
+
 import { SubtitleSegment } from '../types';
 
 // Helper to pad numbers with leading zeros
@@ -87,7 +88,6 @@ export const generateLRC = (
     lines.push(`${formatToLRCTime(seg.start)}${seg.text}`);
     
     // Gap check: if gap to next segment is > 4 seconds, add a "clear" timestamp
-    // The clear timestamp is set to end_time + 4 seconds as per user's request
     if (i < segments.length - 1) {
       const nextSeg = segments[i + 1];
       const gap = nextSeg.start - seg.end;
@@ -95,6 +95,9 @@ export const generateLRC = (
       if (gap > 4.0) {
         lines.push(`${formatToLRCTime(seg.end + 4.0)}`);
       }
+    } else {
+      // Per user request: for the very last line, add a clear timestamp 4 seconds after end
+      lines.push(`${formatToLRCTime(seg.end + 4.0)}`);
     }
   }
   
