@@ -1,6 +1,7 @@
+
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { Mic, Upload, FileAudio, X, Loader2, ArrowRight, Wand2, Maximize, Minimize } from 'lucide-react';
-import { AppState, SubtitleSegment, AudioSource } from './types';
+import { Mic, Upload, FileAudio, X, Loader2, ArrowRight, Wand2, Maximize, Minimize, Cpu } from 'lucide-react';
+import { AppState, SubtitleSegment, AudioSource, GeminiModel } from './types';
 import { transcribeAudio, fileToBase64 } from './services/geminiService';
 import AudioVisualizer from './components/AudioVisualizer';
 import ResultsView from './components/ResultsView';
@@ -9,6 +10,7 @@ import { formatDuration } from './utils/timeUtils';
 const App: React.FC = () => {
   const [appState, setAppState] = useState<AppState>(AppState.IDLE);
   const [audioSourceType, setAudioSourceType] = useState<AudioSource>('upload');
+  const [selectedModel, setSelectedModel] = useState<GeminiModel>('gemini-3-flash-preview');
   const [audioFile, setAudioFile] = useState<Blob | null>(null);
   const [audioName, setAudioName] = useState<string>('');
   const [transcription, setTranscription] = useState<SubtitleSegment[]>([]);
@@ -181,7 +183,7 @@ const App: React.FC = () => {
       const base64 = await fileToBase64(audioFile);
       const mimeType = audioFile.type || 'audio/mp3'; // Default fallback if type missing
       
-      const segments = await transcribeAudio(base64, mimeType);
+      const segments = await transcribeAudio(base64, mimeType, selectedModel);
       setTranscription(segments);
       setAppState(AppState.COMPLETED);
     } catch (err) {
@@ -212,7 +214,7 @@ const App: React.FC = () => {
           </div>
           <div className="flex items-center gap-4">
             <div className="hidden sm:block text-xs font-medium px-3 py-1 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-              Powered by Gemini 2.5 Flash
+              Powered by {selectedModel === 'gemini-3-flash-preview' ? 'Gemini 3 Flash' : 'Gemini 2.5 Flash'}
             </div>
             <button 
               onClick={toggleFullscreen}
@@ -265,40 +267,75 @@ const App: React.FC = () => {
                 <div className="absolute inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center text-center p-8">
                   <Loader2 className="w-12 h-12 text-indigo-500 animate-spin mb-4" />
                   <h3 className="text-xl font-bold text-white">Transcribing Audio...</h3>
-                  <p className="text-slate-400 mt-2">This may take a few moments depending on the length.</p>
+                  <p className="text-slate-400 mt-2">Processing with {selectedModel === 'gemini-3-flash-preview' ? 'Gemini 3 Flash' : 'Gemini 2.5 Flash'}</p>
+                  <p className="text-slate-500 text-xs mt-1">This may take a few moments depending on the length.</p>
                 </div>
               )}
 
-              {/* Tabs */}
+              {/* Configuration Toggles */}
               {appState !== AppState.PROCESSING && (
-                 <div className="grid grid-cols-2 gap-1 p-1 bg-slate-900/50 rounded-xl mb-6 mx-4 mt-4">
-                  <button
-                    onClick={() => !isRecording && setAudioSourceType('upload')}
-                    disabled={appState === AppState.RECORDING}
-                    className={`py-2.5 text-sm font-medium rounded-lg transition-all ${
-                      audioSourceType === 'upload' 
-                        ? 'bg-slate-700 text-white shadow-sm' 
-                        : 'text-slate-400 hover:text-slate-200'
-                    } ${appState === AppState.RECORDING ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  >
-                    Upload File
-                  </button>
-                  <button
-                    onClick={() => !audioFile && setAudioSourceType('microphone')}
-                    disabled={appState === AppState.READY && audioSourceType === 'upload'}
-                    className={`py-2.5 text-sm font-medium rounded-lg transition-all ${
-                      audioSourceType === 'microphone' 
-                        ? 'bg-slate-700 text-white shadow-sm' 
-                        : 'text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    Record Audio
-                  </button>
+                <div className="px-4 pt-4 space-y-4">
+                  {/* Model Selector */}
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1 flex items-center gap-1.5">
+                      <Cpu size={12} /> Select AI Engine
+                    </label>
+                    <div className="grid grid-cols-2 gap-2 p-1 bg-slate-900/50 rounded-xl border border-slate-700/50">
+                      <button
+                        onClick={() => setSelectedModel('gemini-3-flash-preview')}
+                        className={`py-2 text-xs font-bold rounded-lg transition-all flex flex-col items-center justify-center ${
+                          selectedModel === 'gemini-3-flash-preview' 
+                            ? 'bg-indigo-600 text-white shadow-lg' 
+                            : 'text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        Gemini 3 Flash
+                        <span className="text-[8px] opacity-60 font-medium">Next-Gen Speed</span>
+                      </button>
+                      <button
+                        onClick={() => setSelectedModel('gemini-2.5-flash')}
+                        className={`py-2 text-xs font-bold rounded-lg transition-all flex flex-col items-center justify-center ${
+                          selectedModel === 'gemini-2.5-flash' 
+                            ? 'bg-indigo-600 text-white shadow-lg' 
+                            : 'text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        Gemini 2.5 Flash
+                        <span className="text-[8px] opacity-60 font-medium">Standard Pro</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Input Source Selector */}
+                  <div className="grid grid-cols-2 gap-2 p-1 bg-slate-900/50 rounded-xl border border-slate-700/50">
+                    <button
+                      onClick={() => !isRecording && setAudioSourceType('upload')}
+                      disabled={appState === AppState.RECORDING}
+                      className={`py-2 text-xs font-bold rounded-lg transition-all ${
+                        audioSourceType === 'upload' 
+                          ? 'bg-slate-700 text-white shadow-sm' 
+                          : 'text-slate-400 hover:text-slate-200'
+                      } ${appState === AppState.RECORDING ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    >
+                      Upload File
+                    </button>
+                    <button
+                      onClick={() => !audioFile && setAudioSourceType('microphone')}
+                      disabled={appState === AppState.READY && audioSourceType === 'upload'}
+                      className={`py-2 text-xs font-bold rounded-lg transition-all ${
+                        audioSourceType === 'microphone' 
+                          ? 'bg-slate-700 text-white shadow-sm' 
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      Record Audio
+                    </button>
+                  </div>
                 </div>
               )}
 
               {/* Content Area */}
-              <div className="px-6 pb-8 pt-2 min-h-[200px] flex flex-col justify-center">
+              <div className="px-6 pb-8 pt-4 min-h-[200px] flex flex-col justify-center">
                 
                 {/* MODE: UPLOAD */}
                 {audioSourceType === 'upload' && (

@@ -18,3 +18,5 @@ export enum AppState {
 export type AudioSource = 'upload' | 'microphone';
 
 export type AspectRatio = '16:9' | '9:16' | '3:4';
+
+export type GeminiModel = 'gemini-3-flash-preview' | 'gemini-2.5-flash';

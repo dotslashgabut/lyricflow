@@ -1,11 +1,11 @@
-import { GoogleGenAI, Type } from "@google/genai";
-import { SubtitleSegment } from "../types";
 
-const MODEL_NAME = "gemini-2.5-flash";
+import { GoogleGenAI, Type } from "@google/genai";
+import { SubtitleSegment, GeminiModel } from "../types";
 
 export const transcribeAudio = async (
   base64Audio: string,
-  mimeType: string
+  mimeType: string,
+  modelName: GeminiModel
 ): Promise<SubtitleSegment[]> => {
   if (!process.env.API_KEY) {
     throw new Error("API Key is missing. Please check your environment configuration.");
@@ -34,7 +34,7 @@ export const transcribeAudio = async (
 
   try {
     const response = await ai.models.generateContent({
-      model: MODEL_NAME,
+      model: modelName,
       contents: {
         parts: [
           {
