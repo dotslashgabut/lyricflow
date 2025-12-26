@@ -7,9 +7,8 @@ const pad = (num: number, size: number): string => {
 };
 
 // Format: HH:MM:SS,mmm (SRT Standard)
-// Example: 00:00:28,106
 export const formatToSRTTime = (seconds: number): string => {
-  if (isNaN(seconds)) return "00:00:00,000";
+  if (isNaN(seconds) || seconds < 0) return "00:00:00,000";
   
   const totalMs = Math.round(seconds * 1000);
   const ms = totalMs % 1000;
@@ -23,30 +22,21 @@ export const formatToSRTTime = (seconds: number): string => {
 };
 
 // Format: [MM:SS.xx] (LRC Standard - centiseconds)
-// Example: [00:28.19]
 export const formatToLRCTime = (seconds: number): string => {
-  if (isNaN(seconds)) return "[00:00.00]";
+  if (isNaN(seconds) || seconds < 0) return "[00:00.00]";
 
-  // Round to nearest centisecond (1/100th of a second)
   const totalCentiseconds = Math.round(seconds * 100);
-  
   const centis = totalCentiseconds % 100;
   const totalSeconds = Math.floor(totalCentiseconds / 100);
   const sec = totalSeconds % 60;
   const min = Math.floor(totalSeconds / 60);
 
-  // Standard LRC usually keeps minutes to 2 digits, but expands if needed.
-  const minStr = pad(min, 2);
-  const secStr = pad(sec, 2);
-  const centiStr = pad(centis, 2);
-
-  return `[${minStr}:${secStr}.${centiStr}]`;
+  return `[${pad(min, 2)}:${pad(sec, 2)}.${pad(centis, 2)}]`;
 };
 
 // Format: MM:SS.mmm (For UI Display)
-// Example: 00:28.106
 export const formatToDisplayTime = (seconds: number): string => {
-  if (isNaN(seconds)) return "00:00.000";
+  if (isNaN(seconds) || seconds < 0) return "00:00.000";
 
   const totalMs = Math.round(seconds * 1000);
   const ms = totalMs % 1000;
@@ -65,39 +55,40 @@ export const generateSRT = (segments: SubtitleSegment[]): string => {
 
 export const generateLRC = (
   segments: SubtitleSegment[], 
-  metadata?: { 
+  metadata: { 
     title?: string; 
     artist?: string; 
     album?: string;
     by?: string;
-  }
+  },
+  audioDuration: number = 0
 ): string => {
   let lines: string[] = [];
   
-  // Headers
-  if (metadata?.title) lines.push(`[ti:${metadata.title}]`);
-  if (metadata?.artist) lines.push(`[ar:${metadata.artist}]`);
-  if (metadata?.album) lines.push(`[al:${metadata.album}]`);
-  lines.push(`[by:${metadata?.by || 'LyricFlow AI'}]`);
+  if (metadata.title) lines.push(`[ti:${metadata.title}]`);
+  if (metadata.artist) lines.push(`[ar:${metadata.artist}]`);
+  if (metadata.album) lines.push(`[al:${metadata.album}]`);
+  lines.push(`[by:${metadata.by || 'LyricFlow AI'}]`);
   
-  // Content
   for (let i = 0; i < segments.length; i++) {
     const seg = segments[i];
-    
-    // Add the current line
     lines.push(`${formatToLRCTime(seg.start)}${seg.text}`);
     
-    // Gap check: if gap to next segment is > 4 seconds, add a "clear" timestamp
+    // Logic for blank timestamp between segments (gap > 4s)
     if (i < segments.length - 1) {
       const nextSeg = segments[i + 1];
       const gap = nextSeg.start - seg.end;
-      
       if (gap > 4.0) {
-        lines.push(`${formatToLRCTime(seg.end + 4.0)}`);
+        lines.push(`${formatToLRCTime(seg.end + 1.0)}`); // Clear text 1s after segment ends
       }
     } else {
-      // Per user request: for the very last line, add a clear timestamp 4 seconds after end
-      lines.push(`${formatToLRCTime(seg.end + 4.0)}`);
+      // LAST LINE SPECIAL LOGIC:
+      // Add a blank timestamp 4 seconds after the last line ends, 
+      // ONLY if it fits within the audio duration.
+      const targetBlankTime = seg.end + 4.0;
+      if (audioDuration > 0 && targetBlankTime <= audioDuration) {
+        lines.push(`${formatToLRCTime(targetBlankTime)}`);
+      }
     }
   }
   
