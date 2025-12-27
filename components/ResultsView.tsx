@@ -17,11 +17,8 @@ import {
   Smartphone,
   Sparkles,
   Layers,
-  Activity,
-  XCircle,
   Palette,
   RefreshCw,
-  Cpu
 } from 'lucide-react';
 
 interface ResultsViewProps {
@@ -56,6 +53,7 @@ const ResultsView: React.FC<ResultsViewProps> = ({
 }) => {
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
   const [activeIndex, setActiveIndex] = useState(-1);
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>('16:9');
   const [resolution, setResolution] = useState<Resolution>('1080p');
@@ -72,6 +70,7 @@ const ResultsView: React.FC<ResultsViewProps> = ({
   
   const audioRef = useRef<HTMLAudioElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const activeSegRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -120,6 +119,23 @@ const ResultsView: React.FC<ResultsViewProps> = ({
       setActiveIndex(index);
     }
   }, [currentTime, segments, activeIndex]);
+
+  // Auto-scroll logic
+  useEffect(() => {
+    if (activeIndex !== -1 && activeSegRef.current && containerRef.current) {
+      const container = containerRef.current;
+      const element = activeSegRef.current;
+      
+      const elementTop = element.offsetTop;
+      const containerHeight = container.clientHeight;
+      const elementHeight = element.clientHeight;
+      
+      container.scrollTo({
+        top: elementTop - containerHeight / 2 + elementHeight / 2,
+        behavior: 'smooth'
+      });
+    }
+  }, [activeIndex]);
 
   const downloadTextFile = (content: string, extension: string) => {
     const blob = new Blob([content], { type: 'application/octet-stream' });
@@ -301,9 +317,20 @@ const ResultsView: React.FC<ResultsViewProps> = ({
             <h2 className="text-lg font-bold text-white flex items-center gap-2">Results</h2>
           </div>
           <div className="flex gap-2">
-            <div className="flex bg-slate-800 p-0.5 rounded-xl border border-slate-700">
-              <button onClick={() => downloadTextFile(generateSRT(segments), 'srt')} className="px-3 py-1 text-slate-400 hover:text-white text-[10px] font-bold">SRT</button>
-              <button onClick={() => downloadTextFile(generateLRC(segments, metadata, audioRef.current?.duration), 'lrc')} className="px-3 py-1 text-slate-400 hover:text-white text-[10px] font-bold">LRC</button>
+            <div className="flex bg-slate-800 p-0.5 rounded-xl border border-slate-700 items-center">
+              <button 
+                onClick={() => downloadTextFile(generateSRT(segments), 'srt')} 
+                className="flex items-center gap-1.5 px-3 py-1 text-slate-400 hover:text-white text-[10px] font-bold transition-colors"
+              >
+                <FileText size={12} /> SRT
+              </button>
+              <div className="h-3 w-px bg-slate-700"></div>
+              <button 
+                onClick={() => downloadTextFile(generateLRC(segments, metadata, duration), 'lrc')} 
+                className="flex items-center gap-1.5 px-3 py-1 text-slate-400 hover:text-white text-[10px] font-bold transition-colors"
+              >
+                <Music size={12} /> LRC
+              </button>
             </div>
             <button onClick={exportVideo} disabled={isExporting} className="flex items-center gap-2 px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold disabled:opacity-50">
               {isExporting ? <Loader2 className="animate-spin" size={16} /> : <Video size={16} />} Export Video
@@ -337,7 +364,7 @@ const ResultsView: React.FC<ResultsViewProps> = ({
                   <button onClick={() => setSelectedModel('gemini-3-flash-preview')} className={`py-1 text-[9px] font-bold rounded ${selectedModel === 'gemini-3-flash-preview' ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}>3 Flash</button>
                 </div>
                 <button onClick={onRetry} className="w-full flex items-center justify-center gap-2 py-1.5 bg-slate-800 text-white rounded-lg text-[10px] font-black border border-slate-700 hover:border-indigo-500/50">
-                  <RefreshCw size={12} /> Try Describe Again
+                  <RefreshCw size={12} /> Re-process Audio
                 </button>
               </div>
             </div>
@@ -359,13 +386,25 @@ const ResultsView: React.FC<ResultsViewProps> = ({
         <div className="bg-slate-950/40">
            {audioUrl && (
             <div className="p-3 bg-slate-900/80 border-b border-slate-800 sticky top-0 z-20 backdrop-blur-md">
-              <audio ref={audioRef} src={audioUrl} controls className="w-full h-10 accent-indigo-500" onTimeUpdate={handleTimeUpdate} />
+              <audio 
+                ref={audioRef} 
+                src={audioUrl} 
+                controls 
+                className="w-full h-10 accent-indigo-500" 
+                onTimeUpdate={handleTimeUpdate}
+                onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
+              />
             </div>
           )}
-          <div ref={containerRef} className="h-[400px] overflow-y-auto">
+          <div ref={containerRef} className="h-[400px] overflow-y-auto relative scroll-smooth">
             <div className="p-4 space-y-2">
               {segments.map((seg, idx) => (
-                <div key={idx} onClick={() => handleSeek(seg.start)} className={`flex gap-4 p-3 rounded-xl transition-all cursor-pointer border ${idx === activeIndex ? 'bg-indigo-600/10 border-indigo-500/30' : 'border-transparent hover:bg-slate-800/40'}`}>
+                <div 
+                  key={idx} 
+                  ref={idx === activeIndex ? activeSegRef : null}
+                  onClick={() => handleSeek(seg.start)} 
+                  className={`flex gap-4 p-3 rounded-xl transition-all cursor-pointer border ${idx === activeIndex ? 'bg-indigo-600/10 border-indigo-500/30' : 'border-transparent hover:bg-slate-800/40'}`}
+                >
                   <div className={`text-[10px] font-mono min-w-[70px] text-right pt-0.5 ${idx === activeIndex ? 'text-indigo-400' : 'text-slate-500'}`}>{formatToDisplayTime(seg.start)}</div>
                   <p className={`flex-1 text-sm ${idx === activeIndex ? 'text-white font-semibold' : 'text-slate-400'}`}>{seg.text}</p>
                 </div>
