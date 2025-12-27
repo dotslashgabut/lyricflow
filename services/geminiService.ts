@@ -33,22 +33,25 @@ export const transcribeAudio = async (
   `;
 
   // Specialized High-Precision Prompt for Gemini 3 Flash
-  // leveraging its reasoning capabilities for tighter timestamp alignment
+  // Optimized for songs: handles repetitions, instrumental gaps, and enforces verbatim transcription.
   if (modelName === 'gemini-3-flash-preview') {
     prompt = `
-      Act as a Lead Audio Timing Engineer using the Gemini 3 engine.
-      Your primary objective is **Sub-Second Precision** alignment of text to audio.
+      You are an AI specialized in **Verbatim Audio Transcription**. 
+      Your task is to transcribe the audio file exactly as heard with **millisecond-accurate** timestamps.
 
-      CRITICAL TIMING INSTRUCTIONS:
-      1. **NO ROUNDING**: Do NOT round timestamps to the nearest 100ms or 500ms. I require raw millisecond precision (e.g., "00:12.483", NOT "00:12.500").
-      2. **AUDIO ENVELOPE ANALYSIS**:
-         - **Start Time**: Detect the exact millisecond of the 'Attack' phase (when the first phoneme breaks silence).
-         - **End Time**: Detect the exact millisecond of the 'Release' phase (when the voice fully decays to the noise floor).
-      3. **RAPID SPEECH**: If lyrics/speech are fast, break them into smaller segments for better synchronization.
-      4. **GAPS**: Strictly respect silence. If there is a pause > 300ms, close the current segment and start a new one.
+      ### CRITICAL INSTRUCTION: AUDIO ONLY
+      - **DO NOT** use internal knowledge of song lyrics. Transcribe ONLY what you hear.
+      - **IF** the audio differs from "official" lyrics, the AUDIO wins.
+      - **REPETITION**: If a line is repeated (e.g., "Yeah / Yeah / Yeah"), output it as separate segments. Do NOT merge.
+      - **INSTRUMENTALS**: Do not hallucinate text during instrumental breaks. If there is music but no vocals, output nothing for that duration, but ensure the NEXT vocal segment starts at the correct timestamp.
 
-      OUTPUT FORMAT:
-      Return a pure JSON array (no markdown) where 'start' and 'end' are strings in "MM:SS.mmm" format.
+      ### TIMING RULES
+      - **Start Time**: When the sound actually starts.
+      - **End Time**: When the sound actually ends.
+      - **Format**: "MM:SS.mmm"
+
+      ### OUTPUT
+      - JSON Array of { "start": "MM:SS.mmm", "end": "MM:SS.mmm", "text": "string" }
     `;
   }
 
@@ -67,8 +70,8 @@ export const transcribeAudio = async (
         ]
       },
       config: {
-        // Higher thinking budget for Gemini 3 to allow for "Timing Analysis"
-        thinkingConfig: modelName === 'gemini-3-flash-preview' ? { thinkingBudget: 8192 } : undefined,
+        // User requested to disable thinking budget to prevent hallucinations
+        thinkingConfig: modelName === 'gemini-3-flash-preview' ? { thinkingBudget: 0 } : undefined,
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.ARRAY,
@@ -77,7 +80,7 @@ export const transcribeAudio = async (
             properties: {
               start: { type: Type.STRING, description: "Start time 'MM:SS.mmm'" },
               end: { type: Type.STRING, description: "End time 'MM:SS.mmm'" },
-              text: { type: Type.STRING }
+              text: { type: Type.STRING, description: "Verbatim text content" }
             },
             required: ["start", "end", "text"]
           }
@@ -92,13 +95,21 @@ export const transcribeAudio = async (
 
     const rawSegments = JSON.parse(jsonText) as any[];
 
-    const parseTimestamp = (ts: string): number => {
+    // Robust timestamp parsing handling both strings and potential numbers
+    const parseTimestamp = (ts: string | number): number => {
+      if (typeof ts === 'number') return ts;
       if (!ts || typeof ts !== 'string') return 0;
+      
+      // Clean up any stray characters
+      ts = ts.trim();
+      
       const parts = ts.split(':');
       if (parts.length === 2) {
+        // MM:SS.mmm
         return (parseFloat(parts[0]) * 60) + parseFloat(parts[1]);
       }
       if (parts.length === 3) {
+        // HH:MM:SS.mmm
         return (parseFloat(parts[0]) * 3600) + (parseFloat(parts[1]) * 60) + parseFloat(parts[2]);
       }
       return parseFloat(ts) || 0;
