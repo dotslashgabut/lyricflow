@@ -13,45 +13,40 @@ export const transcribeAudio = async (
 
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-  // Base prompt for standard models (Gemini 2.5)
+  // Base prompt for standard models
   let prompt = `
     Act as a professional audio transcriber and lyric synchronizer. 
     Analyze the provided audio and generate highly accurate subtitles/lyrics.
 
     TIMESTAMP PRECISION RULES:
     1. **FORMAT**: Timestamps MUST be strings in "MM:SS.mmm" format (e.g., "00:04.250").
-    2. **SYNC**: The "start" timestamp must align exactly with the very first audible syllable or sound of the phrase.
-    3. **DURATION**: The "end" timestamp must mark exactly when the phrase or vocal line concludes.
-    4. **CONSISTENCY**: Timestamps must be absolute and strictly chronological.
-
-    BEHAVIOR:
-    - If it's a song, capture lyrics.
-    - If it's speech, capture the spoken words.
-    - Ensure no overlapping segments.
+    2. **SYNC**: The "start" timestamp must align exactly with the very first audible syllable.
+    3. **DURATION**: The "end" timestamp must mark exactly when the phrase concludes.
     
     OUTPUT: Return a JSON array of objects with keys: "start", "end", "text".
   `;
 
-  // Specialized High-Precision Prompt for Gemini 3 Flash
-  // Optimized for songs: handles repetitions, instrumental gaps, and enforces verbatim transcription.
+  // Specialized Anti-Drift Prompt for Gemini 3 Flash
   if (modelName === 'gemini-3-flash-preview') {
     prompt = `
-      You are an AI specialized in **Verbatim Audio Transcription**. 
-      Your task is to transcribe the audio file exactly as heard with **millisecond-accurate** timestamps.
+      You are an AI specialized in **Physical Audio Onset Detection**. 
+      Your task is to generate a chronological log of vocal events from the provided audio.
 
-      ### CRITICAL INSTRUCTION: AUDIO ONLY
-      - **DO NOT** use internal knowledge of song lyrics. Transcribe ONLY what you hear.
-      - **IF** the audio differs from "official" lyrics, the AUDIO wins.
-      - **REPETITION**: If a line is repeated (e.g., "Yeah / Yeah / Yeah"), output it as separate segments. Do NOT merge.
-      - **INSTRUMENTALS**: Do not hallucinate text during instrumental breaks. If there is music but no vocals, output nothing for that duration, but ensure the NEXT vocal segment starts at the correct timestamp.
+      ### THE "SAME-PREFIX" TIMING RULE (CRITICAL)
+      If multiple lines start with the same words (e.g., a repeated chorus line), you MUST NOT predict the timing. 
+      - **DO NOT** assume the next line starts right after the previous one.
+      - **DO NOT** skip forward based on textual similarity.
+      - **ACTION**: You must find the EXACT millisecond where the vocal signal physically begins for EVERY instance. If a word is repeated 3 times, you must output 3 separate objects with 3 distinct, non-overlapping timestamps.
 
-      ### TIMING RULES
-      - **Start Time**: When the sound actually starts.
-      - **End Time**: When the sound actually ends.
-      - **Format**: "MM:SS.mmm"
+      ### SYNC PROTOCOL
+      1. **START ANCHOR**: The 'start' timestamp MUST be the absolute first millisecond of the vocal "attack".
+      2. **END ANCHOR**: The 'end' timestamp MUST be the exact moment the vocal decay finishes.
+      3. **ZERO PREDICTION**: Ignore any internal knowledge of song patterns. Treat every second of audio as a raw signal. If there is a 2-second gap between identical lines, your timestamps MUST reflect that 2-second gap accurately.
 
-      ### OUTPUT
-      - JSON Array of { "start": "MM:SS.mmm", "end": "MM:SS.mmm", "text": "string" }
+      ### FORMAT REQUIREMENTS
+      - Output: Pure JSON Array of objects.
+      - Precision: Use "MM:SS.mmm" (e.g., "01:23.456"). Milliseconds are MANDATORY.
+      - Verbatim: Transcribe exactly what is heard. No summaries.
     `;
   }
 
@@ -70,7 +65,8 @@ export const transcribeAudio = async (
         ]
       },
       config: {
-        // User requested to disable thinking budget to prevent hallucinations
+        // Disabled thinking budget to minimize creative/hallucinatory reasoning as requested.
+        // This forces the model to rely on direct perception.
         thinkingConfig: modelName === 'gemini-3-flash-preview' ? { thinkingBudget: 0 } : undefined,
         responseMimeType: "application/json",
         responseSchema: {
@@ -78,9 +74,18 @@ export const transcribeAudio = async (
           items: {
             type: Type.OBJECT,
             properties: {
-              start: { type: Type.STRING, description: "Start time 'MM:SS.mmm'" },
-              end: { type: Type.STRING, description: "End time 'MM:SS.mmm'" },
-              text: { type: Type.STRING, description: "Verbatim text content" }
+              start: { 
+                type: Type.STRING, 
+                description: "Start time in 'MM:SS.mmm' format (MUST include 3 decimal places for milliseconds)" 
+              },
+              end: { 
+                type: Type.STRING, 
+                description: "End time in 'MM:SS.mmm' format (MUST include 3 decimal places for milliseconds)" 
+              },
+              text: { 
+                type: Type.STRING, 
+                description: "Verbatim transcribed text" 
+              }
             },
             required: ["start", "end", "text"]
           }
@@ -91,38 +96,53 @@ export const transcribeAudio = async (
     let jsonText = response.text || "";
     jsonText = jsonText.replace(/```json|```/g, "").trim();
 
-    if (!jsonText) throw new Error("Empty response from AI.");
+    if (!jsonText) throw new Error("AI returned an empty response.");
 
     const rawSegments = JSON.parse(jsonText) as any[];
 
-    // Robust timestamp parsing handling both strings and potential numbers
+    // Advanced timestamp parsing to ensure sub-second precision is maintained
     const parseTimestamp = (ts: string | number): number => {
       if (typeof ts === 'number') return ts;
       if (!ts || typeof ts !== 'string') return 0;
       
-      // Clean up any stray characters
-      ts = ts.trim();
+      const cleanTs = ts.trim();
+      const parts = cleanTs.split(':');
       
-      const parts = ts.split(':');
-      if (parts.length === 2) {
-        // MM:SS.mmm
-        return (parseFloat(parts[0]) * 60) + parseFloat(parts[1]);
+      try {
+        if (parts.length === 2) {
+          // Format MM:SS.mmm
+          const minutes = parseFloat(parts[0]);
+          const seconds = parseFloat(parts[1]);
+          return (minutes * 60) + seconds;
+        } else if (parts.length === 3) {
+          // Format HH:MM:SS.mmm
+          const hours = parseFloat(parts[0]);
+          const minutes = parseFloat(parts[1]);
+          const seconds = parseFloat(parts[2]);
+          return (hours * 3600) + (minutes * 60) + seconds;
+        } else {
+          // Raw seconds or fallback
+          const val = parseFloat(cleanTs);
+          return isNaN(val) ? 0 : val;
+        }
+      } catch (e) {
+        console.warn("Could not parse timestamp:", ts);
+        return 0;
       }
-      if (parts.length === 3) {
-        // HH:MM:SS.mmm
-        return (parseFloat(parts[0]) * 3600) + (parseFloat(parts[1]) * 60) + parseFloat(parts[2]);
-      }
-      return parseFloat(ts) || 0;
     };
 
-    return rawSegments.map(seg => ({
-      start: parseTimestamp(seg.start),
-      end: parseTimestamp(seg.end),
-      text: seg.text || ""
-    }));
+    // Post-process segments to ensure strict chronological order and remove potential empty artifacts
+    return rawSegments
+      .map(seg => ({
+        start: parseTimestamp(seg.start),
+        end: parseTimestamp(seg.end),
+        text: (seg.text || "").trim()
+      }))
+      .filter(seg => seg.text.length > 0)
+      .sort((a, b) => a.start - b.start);
 
   } catch (error) {
-    console.error("Transcription error:", error);
+    console.error("Transcription pipeline error:", error);
     throw error;
   }
 };
@@ -131,7 +151,11 @@ export const fileToBase64 = (file: Blob): Promise<string> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.readAsDataURL(file);
-    reader.onload = () => resolve((reader.result as string).split(',')[1]);
+    reader.onload = () => {
+      const result = reader.result as string;
+      const base64 = result.split(',')[1];
+      resolve(base64);
+    };
     reader.onerror = reject;
   });
 };
