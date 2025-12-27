@@ -13,43 +13,57 @@ export const transcribeAudio = async (
 
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-  // Base prompt for standard models
-  let prompt = `
-    Act as a professional audio transcriber and lyric synchronizer. 
-    Analyze the provided audio and generate highly accurate subtitles/lyrics.
-
-    TIMESTAMP PRECISION RULES:
-    1. **FORMAT**: Timestamps MUST be strings in "MM:SS.mmm" format (e.g., "00:04.250").
-    2. **SYNC**: The "start" timestamp must align exactly with the very first audible syllable.
-    3. **DURATION**: The "end" timestamp must mark exactly when the phrase concludes.
+  // 1. Define strict System Instructions to govern model behavior
+  // This helps prevent the model from getting "lazy" with repetitions.
+  const systemInstruction = `
+    You are a professional Lyric Alignment AI. Your specific goal is **Verbatim Transcription**.
     
-    OUTPUT: Return a JSON array of objects with keys: "start", "end", "text".
+    ### CRITICAL RULES FOR REPETITION & FLOW:
+    1. **NEVER SUMMARIZE**: Do not use notation like "(x4)", "[chorus repeats]", or "[instrumental]". 
+    2. **CAPTURE EVERY UTTERANCE**: If a singer repeats "eh eh eh" or "no no no" 20 times, you MUST generate segments for all 20 instances.
+    3. **NON-LEXICAL SOUNDS**: You must transcribe vocalizations like "ooh", "aah", "na na", "la la" exactly as they are sung.
+    4. **CONTINUITY**: Do not stop transcribing until the audio is completely finished. Do not drop the last verse.
+    5. **TIMESTAMP ACCURACY**: Ensure strictly increasing timestamps. 'end' time must never be before 'start' time.
   `;
 
-  // Specialized Anti-Drift Prompt for Gemini 3 Flash
+  // 2. Specialized Prompting based on Model capabilities
+  let prompt = "";
+
   if (modelName === 'gemini-3-flash-preview') {
+    // Gemini 3 Flash Prompt (Logic Heavy)
     prompt = `
-      You are an expert **Lyric Synchronizer**. 
-      Your goal is to segment the audio into **natural, full lyrical lines** while maintaining robotic precision for timestamps.
+      Analyze the provided audio and generate a JSON array of subtitle segments.
 
-      ### SEGMENTATION STRATEGY (IMPORTANT)
-      1. **Full Lines, Not Fragments**: Do NOT break sentences into tiny chunks (e.g., do not output "I went" then "to the" then "store"). Output "I went to the store" as one segment.
-      2. **Natural Phrasing**: Follow the musical phrasing. A segment should usually be a complete line of verse or chorus.
-      3. **Exceptions**: Short segments are allowed only for distinct interjections (e.g., "Yeah!", "Go!") or very short meaningful pauses.
+      ### INSTRUCTIONS:
+      1. **Granularity**: Break segments by natural musical phrasing, but break shorter for rapid-fire repetition.
+      2. **Handling Repetition**: 
+         The audio may contain highly repetitive sections (e.g., "eh eh eh", "baby baby baby"). 
+         - **Do not merge these.** 
+         - **Do not skip them.**
+         - **Do not stop early.**
+      3. **Precision**: Align 'start' to the first consonant/vowel of the phrase.
 
-      ### CRITICAL: TIMING & DRIFT PREVENTION
-      1. **Anchor the Start**: The 'start' timestamp must correspond to the *first syllable* of the phrase.
-      2. **Anchor the End**: The 'end' timestamp must correspond to the *last syllable* of the phrase.
-      3. **Handle Repetitions**: If the singer repeats "Hello" three times, output three separate segments with distinct timestamps.
-      4. **No Prediction**: Do not guess timing based on text. Listen to the audio signal.
+      ### OUTPUT FORMAT:
+      Return ONLY a JSON Array.
+      Timestamp format: "MM:SS.mmm" (e.g. "01:23.450").
+    `;
+  } else {
+    // Gemini 2.5 Flash Prompt (Instruction Heavy for Stability)
+    prompt = `
+      Act as a strict verbatim transcriber. Listen to the audio file and transcribe the lyrics/speech into timed segments.
 
-      ### TEXT FIDELITY
-      - Keep all single quotes (don't, it's, 'cause).
-      - Transcribe exactly what is sung.
+      ### HANDLING REPETITION (CRITICAL):
+      The audio may contain highly repetitive sections (e.g., "eh eh eh", "baby baby baby"). 
+      - **Do not merge these.** 
+      - **Do not skip them.**
+      - **Do not stop early.**
+      
+      If the audio has 50 repeated words, your JSON output must have 50 entries corresponding to those times.
 
-      ### FORMAT
-      - Output: Pure JSON Array.
-      - Timestamp: "MM:SS.mmm" (e.g. "00:04.250").
+      ### FORMATTING:
+      - Return a JSON array of objects.
+      - Properties: "start", "end", "text".
+      - "start" and "end" must be strings in "MM:SS.mmm" format (e.g. "01:23.450").
     `;
   }
 
@@ -68,6 +82,7 @@ export const transcribeAudio = async (
         ]
       },
       config: {
+        systemInstruction: systemInstruction,
         // Disabled thinking budget to minimize creative/hallucinatory reasoning as requested.
         thinkingConfig: modelName === 'gemini-3-flash-preview' ? { thinkingBudget: 4096 } : undefined,
         responseMimeType: "application/json",
@@ -86,7 +101,7 @@ export const transcribeAudio = async (
               },
               text: { 
                 type: Type.STRING, 
-                description: "Verbatim transcribed text, preserving all quotes and punctuation" 
+                description: "Verbatim text. DO NOT summarize repetitions." 
               }
             },
             required: ["start", "end", "text"]
@@ -108,7 +123,6 @@ export const transcribeAudio = async (
       if (!ts || typeof ts !== 'string') return 0;
       
       // CRITICAL FIX: Replace comma with dot to ensure parseFloat handles milliseconds correctly
-      // Some locales or AI outputs might use "00:04,250" which JS parseFloat parses as 4.
       const cleanTs = ts.trim().replace(',', '.');
       const parts = cleanTs.split(':');
       
