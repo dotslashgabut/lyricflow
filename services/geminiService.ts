@@ -12,11 +12,11 @@ const TRANSCRIPTION_SCHEMA = {
         properties: {
           startTime: {
             type: Type.STRING,
-            description: "Absolute timestamp in HH:MM:SS.mmm format (e.g. '00:01:05.300'). Cumulative from start.",
+            description: "Timestamp in MM:SS.mmm format (e.g. '01:05.300'). Cumulative from start.",
           },
           endTime: {
             type: Type.STRING,
-            description: "Absolute timestamp in HH:MM:SS.mmm format.",
+            description: "Timestamp in MM:SS.mmm format.",
           },
           text: {
             type: Type.STRING,
@@ -167,7 +167,7 @@ export const transcribeAudio = async (
 
   const timingPolicy = `
     STRICT TIMING POLICY:
-    1. FORMAT: Use **HH:MM:SS.mmm** (e.g. 00:01:05.300).
+    1. FORMAT: Use **MM:SS.mmm** (e.g. 01:05.300).
     2. ABSOLUTE & CUMULATIVE: Timestamps must be relative to the START of the file.
     3. MONOTONICITY: Time MUST always move forward. startTime[n] >= endTime[n-1].
     4. ACCURACY: Sync text exactly to when it is spoken.
@@ -244,7 +244,7 @@ export const transcribeAudio = async (
               ${jsonSafetyPolicy}
               
               REQUIRED FORMAT: JSON object with "segments" array. 
-              Timestamps MUST be 'HH:MM:SS.mmm'. Do not stop until you have reached the end of the audio.`,
+              Timestamps MUST be 'MM:SS.mmm'. Do not stop until you have reached the end of the audio.`,
             },
           ],
         },
