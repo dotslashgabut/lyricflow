@@ -171,6 +171,7 @@ export const transcribeAudio = async (
     1. STRUCTURE: Group words into natural lines/phrases (this is the parent object).
     2. DETAILS: Inside each line object, you MUST provide a "words" array.
     3. WORDS: The "words" array must contain EVERY single word from that line with its own precise start/end time.
+    4. CJK HANDLING: For Chinese, Japanese, or Korean scripts, treat each character (or logical block of characters) as a separate "word" for the purposes of karaoke timing.
     
     EXAMPLE STRUCTURE:
     {
@@ -205,6 +206,18 @@ export const transcribeAudio = async (
     ${timingPolicy}
     
     ${segmentationPolicy}
+
+    LANGUAGE HANDLING (CRITICAL):
+    1. RAPID CODE-SWITCHING: Audio often contains multiple languages mixed within the SAME sentence.
+    2. MULTI-LINGUAL EQUALITY: The languages might NOT include English (e.g. Indonesian mixed with Japanese, Chinese mixed with Japanese). Treat all detected languages as equally probable.
+    3. WORD-LEVEL DETECTION: Detect the language of every individual word.
+    4. NATIVE SCRIPT STRICTNESS: Write EACH word in its native script.
+       - Example: "Aku cinta kamu" (Indonesian) -> Latin.
+       - Example: "愛してる" (Japanese) -> Kanji/Kana.
+    5. PROHIBITIONS:
+       - DO NOT translate.
+       - DO NOT romanize (unless explicitly spelled out).
+       - DO NOT force English if it is not spoken.
     
     GENERAL RULES:
     - Verbatim: Transcribe exactly what is heard. Include fillers (um, ah) if sung.

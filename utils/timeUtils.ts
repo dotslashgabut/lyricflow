@@ -108,33 +108,50 @@ export const generateLRC = (
   return lines.join('\n');
 };
 
+/**
+ * Checks if a string contains CJK characters.
+ * Used to determine spacing rules for TTML generation.
+ * Ranges: Hiragana, Katakana, CJK Unified Ideographs, Hangul
+ */
+const hasCJK = (text: string): boolean => {
+  return /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff66-\uff9f]/.test(text);
+};
+
 export const generateTTML = (
   segments: SubtitleSegment[],
   metadata: { title?: string }
 ): string => {
   const title = metadata.title || "Lyrics";
   
-  const bodyContent = segments.map((seg) => {
-    const startStr = formatToTTMLTime(seg.start);
-    const endStr = formatToTTMLTime(seg.end);
-
-    // Escape XML special characters
-    const escape = (str: string) => str
+  // XML Escaping helper
+  const escape = (str: string) => str
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&apos;');
+  
+  const bodyContent = segments.map((seg) => {
+    const startStr = formatToTTMLTime(seg.start);
+    const endStr = formatToTTMLTime(seg.end);
 
     if (seg.words && seg.words.length > 0) {
-      // Generate Word-level spans
-      const spans = seg.words.map(word => {
-        return `<span begin="${formatToTTMLTime(word.start)}" end="${formatToTTMLTime(word.end)}">${escape(word.text)} </span>`;
-      }).join('\n        ');
+      // Generate Word-level spans with smart mixed-language spacing
+      // We join with '' (empty string) to avoid accidental whitespace from newlines in the XML
+      const spans = seg.words.map((word, index) => {
+        const isLastWord = index === (seg.words!.length - 1);
+        
+        // Smart Spacing Logic:
+        // 1. If it's CJK, we typically DO NOT want a space after it (dense packing).
+        // 2. If it's Latin/Other, we DO want a space after it, UNLESS it's the very last word of the line.
+        const needsTrailingSpace = !hasCJK(word.text) && !isLastWord;
+        
+        const content = escape(word.text) + (needsTrailingSpace ? ' ' : '');
+        
+        return `<span begin="${formatToTTMLTime(word.start)}" end="${formatToTTMLTime(word.end)}">${content}</span>`;
+      }).join(''); 
 
-      return `      <p begin="${startStr}" end="${endStr}">
-        ${spans}
-      </p>`;
+      return `      <p begin="${startStr}" end="${endStr}">${spans}</p>`;
     } else {
       // Fallback to simple line-level
       return `      <p begin="${startStr}" end="${endStr}">${escape(seg.text)}</p>`;
@@ -142,7 +159,7 @@ export const generateTTML = (
   }).join('\n');
 
   return `<?xml version="1.0" encoding="UTF-8"?>
-<tt xmlns="http://www.w3.org/ns/ttml" xmlns:tts="http://www.w3.org/ns/ttml#styling" xml:lang="en">
+<tt xmlns="http://www.w3.org/ns/ttml" xmlns:tts="http://www.w3.org/ns/ttml#styling" xml:lang="mul">
   <head>
     <metadata>
       <ttm:title xmlns:ttm="http://www.w3.org/ns/ttml#metadata">${title}</ttm:title>

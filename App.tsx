@@ -259,7 +259,7 @@ const App: React.FC = () => {
                 Turn Audio into <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-cyan-400">Subtitles</span>
               </h2>
               <p className="text-slate-400 text-lg max-w-lg mx-auto">
-                Generate perfectly timed SRT, LRC, or TTML files from your music or recordings instantly using AI.
+                Generate perfectly timed SRT, LRC, or TTML files. <span className="text-indigo-400">Optimized for Lyrics and Subtitles.
               </p>
             </div>
 
@@ -272,6 +272,7 @@ const App: React.FC = () => {
                   <Loader2 className="w-12 h-12 text-indigo-500 animate-spin mb-4" />
                   <h3 className="text-xl font-bold text-white">Transcribing Audio...</h3>
                   <p className="text-slate-400 mt-2">Processing with {selectedModel === 'gemini-3-flash-preview' ? 'Gemini 3 Flash' : 'Gemini 2.5 Flash'}</p>
+                  <p className="text-indigo-400/80 text-xs font-medium mt-2 animate-pulse">Detecting mixed languages & synchronizing...</p>
                   <p className="text-slate-500 text-xs mt-1">Mode: {transcriptionMode === 'line' ? 'Lines/Sentences' : 'Word-by-Word'}</p>
                 </div>
               )}
