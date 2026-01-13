@@ -171,7 +171,8 @@ export const transcribeAudio = async (
     1. STRUCTURE: Group words into natural lines/phrases (this is the parent object).
     2. DETAILS: Inside each line object, you MUST provide a "words" array.
     3. WORDS: The "words" array must contain EVERY single word from that line with its own precise start/end time.
-    4. CJK HANDLING: For Chinese, Japanese, or Korean scripts, treat each character (or logical block of characters) as a separate "word" for the purposes of karaoke timing.
+    4. REPETITIONS: Transcribe EVERY repeated word/line. Do NOT skip repetitions.
+    5. CJK HANDLING: For Chinese, Japanese, or Korean scripts, treat each character (or logical block of characters) as a separate "word" for the purposes of karaoke timing.
     
     EXAMPLE STRUCTURE:
     {
@@ -191,7 +192,7 @@ export const transcribeAudio = async (
 
     1. PHRASES: Group words into complete sentences or musical phrases.
     2. CLARITY: Do not break a sentence in the middle unless there is a pause.
-    3. REPETITIONS: Separate repetitive vocalizations (e.g. "Oh oh oh") from the main lyrics into their own lines.
+    3. REPETITIONS: Transcribe EVERY repetition (e.g. Chorus repeated 3 times -> 3 separate segments). Do not summarize or use "x2".
     4. LENGTH: Keep segments between 2 and 6 seconds for readability.
     5. WORDS ARRAY: You may omit the "words" array in this mode to save tokens.
     `;
@@ -221,6 +222,7 @@ export const transcribeAudio = async (
     
     GENERAL RULES:
     - Verbatim: Transcribe exactly what is heard. Include fillers (um, ah) if sung.
+    - REPETITION STRICTNESS: If the audio repeats a line 4 times, you MUST output 4 separate segments. NEVER skip, summarize, or deduplicate repeated lyrics/text.
     - Completeness: Transcribe from 00:00 to the very end. Do not summarize.
     - JSON Only: Output pure JSON. No markdown fences.
   `;
