@@ -49,6 +49,19 @@ export const formatToLRCTime = (seconds: number): string => {
   return `[${pad(min, 2)}:${pad(sec, 2)}.${pad(centis, 2)}]`;
 };
 
+// Format: <MM:SS.xx> (Enhanced LRC Tag)
+export const formatToEnhancedLRCTag = (seconds: number): string => {
+  if (isNaN(seconds) || seconds < 0) return "<00:00.00>";
+
+  const totalCentiseconds = Math.round(seconds * 100);
+  const centis = totalCentiseconds % 100;
+  const totalSeconds = Math.floor(totalCentiseconds / 100);
+  const sec = totalSeconds % 60;
+  const min = Math.floor(totalSeconds / 60);
+
+  return `<${pad(min, 2)}:${pad(sec, 2)}.${pad(centis, 2)}>`;
+};
+
 // Format: MM:SS.mmm (For UI Display)
 export const formatToDisplayTime = (seconds: number): string => {
   if (isNaN(seconds) || seconds < 0) return "00:00.000";
@@ -125,6 +138,45 @@ export const generateLRC = (
       if (audioDuration > 0 && targetBlankTime <= audioDuration) {
         lines.push(`${formatToLRCTime(targetBlankTime)}`);
       }
+    }
+  }
+  
+  return lines.join('\n');
+};
+
+export const generateEnhancedLRC = (
+  segments: SubtitleSegment[],
+  metadata: {
+    title?: string;
+    artist?: string;
+    album?: string;
+    by?: string;
+  }
+): string => {
+  let lines: string[] = [];
+  
+  if (metadata.title) lines.push(`[ti:${metadata.title}]`);
+  if (metadata.artist) lines.push(`[ar:${metadata.artist}]`);
+  if (metadata.album) lines.push(`[al:${metadata.album}]`);
+  lines.push(`[by:${metadata.by || 'LyricFlow AI'}]`);
+  
+  for (const seg of segments) {
+    const lineStart = formatToLRCTime(seg.start);
+    
+    if (seg.words && seg.words.length > 0) {
+      // Format: [MM:SS.xx] <MM:SS.xx> Word <MM:SS.xx> Word
+      const wordsContent = seg.words.map((w, idx) => {
+        const tag = formatToEnhancedLRCTag(w.start);
+        const isCJK = hasCJK(w.text);
+        const isLast = idx === (seg.words!.length - 1);
+        const suffix = (!isCJK && !isLast) ? " " : "";
+        return `${tag}${w.text}${suffix}`;
+      }).join('');
+      
+      lines.push(`${lineStart} ${wordsContent}`);
+    } else {
+      // Fallback for lines without word timings
+      lines.push(`${lineStart}${seg.text}`);
     }
   }
   

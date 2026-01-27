@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { SubtitleSegment, AspectRatio, GeminiModel, TranscriptionMode } from '../types';
-import { generateLRC, generateSRT, generateTTML, generateVTT, formatToDisplayTime } from '../utils/timeUtils';
+import { generateLRC, generateEnhancedLRC, generateSRT, generateTTML, generateVTT, formatToDisplayTime } from '../utils/timeUtils';
 import { 
   FileText, 
   Music, 
@@ -23,7 +23,8 @@ import {
   FileJson,
   AlignJustify,
   ScanText,
-  FileAudio
+  FileAudio,
+  Mic2
 } from 'lucide-react';
 
 interface ResultsViewProps {
@@ -348,6 +349,14 @@ const ResultsView: React.FC<ResultsViewProps> = ({
                 className="flex items-center gap-1.5 px-3 py-1 text-slate-400 hover:text-white text-[10px] font-bold transition-colors whitespace-nowrap"
               >
                 <Music size={12} /> LRC
+              </button>
+              <div className="h-3 w-px bg-slate-700 shrink-0"></div>
+              <button 
+                onClick={() => downloadTextFile(generateEnhancedLRC(segments, metadata), 'lrc')} 
+                className="flex items-center gap-1.5 px-3 py-1 text-slate-400 hover:text-indigo-400 text-[10px] font-bold transition-colors whitespace-nowrap"
+                title="Enhanced LRC (Karaoke)"
+              >
+                <Mic2 size={12} /> eLRC
               </button>
               <div className="h-3 w-px bg-slate-700 shrink-0"></div>
               <button 
