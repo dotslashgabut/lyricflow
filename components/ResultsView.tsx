@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { SubtitleSegment, AspectRatio, GeminiModel } from '../types';
-import { generateLRC, generateSRT, generateTTML, formatToDisplayTime } from '../utils/timeUtils';
+import { SubtitleSegment, AspectRatio, GeminiModel, TranscriptionMode } from '../types';
+import { generateLRC, generateSRT, generateTTML, generateVTT, formatToDisplayTime } from '../utils/timeUtils';
 import { 
   FileText, 
   Music, 
@@ -19,7 +19,10 @@ import {
   Layers,
   Palette,
   RefreshCw,
-  Code2
+  Code2,
+  FileJson,
+  AlignJustify,
+  ScanText
 } from 'lucide-react';
 
 interface ResultsViewProps {
@@ -30,6 +33,8 @@ interface ResultsViewProps {
   selectedModel: GeminiModel;
   setSelectedModel: (model: GeminiModel) => void;
   onRetry: () => void;
+  transcriptionMode: TranscriptionMode;
+  setTranscriptionMode: (mode: TranscriptionMode) => void;
 }
 
 type Resolution = '720p' | '1080p';
@@ -50,7 +55,9 @@ const ResultsView: React.FC<ResultsViewProps> = ({
   audioFile,
   selectedModel,
   setSelectedModel,
-  onRetry
+  onRetry,
+  transcriptionMode,
+  setTranscriptionMode
 }) => {
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
@@ -318,29 +325,36 @@ const ResultsView: React.FC<ResultsViewProps> = ({
             <h2 className="text-lg font-bold text-white flex items-center gap-2">Results</h2>
           </div>
           <div className="flex gap-2">
-            <div className="flex bg-slate-800 p-0.5 rounded-xl border border-slate-700 items-center">
+            <div className="flex bg-slate-800 p-0.5 rounded-xl border border-slate-700 items-center overflow-x-auto no-scrollbar">
               <button 
                 onClick={() => downloadTextFile(generateSRT(segments), 'srt')} 
-                className="flex items-center gap-1.5 px-3 py-1 text-slate-400 hover:text-white text-[10px] font-bold transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1 text-slate-400 hover:text-white text-[10px] font-bold transition-colors whitespace-nowrap"
               >
                 <FileText size={12} /> SRT
               </button>
-              <div className="h-3 w-px bg-slate-700"></div>
+              <div className="h-3 w-px bg-slate-700 shrink-0"></div>
+              <button 
+                onClick={() => downloadTextFile(generateVTT(segments), 'vtt')} 
+                className="flex items-center gap-1.5 px-3 py-1 text-slate-400 hover:text-white text-[10px] font-bold transition-colors whitespace-nowrap"
+              >
+                <Monitor size={12} /> VTT
+              </button>
+              <div className="h-3 w-px bg-slate-700 shrink-0"></div>
               <button 
                 onClick={() => downloadTextFile(generateLRC(segments, metadata, duration), 'lrc')} 
-                className="flex items-center gap-1.5 px-3 py-1 text-slate-400 hover:text-white text-[10px] font-bold transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1 text-slate-400 hover:text-white text-[10px] font-bold transition-colors whitespace-nowrap"
               >
                 <Music size={12} /> LRC
               </button>
-              <div className="h-3 w-px bg-slate-700"></div>
+              <div className="h-3 w-px bg-slate-700 shrink-0"></div>
               <button 
                 onClick={() => downloadTextFile(generateTTML(segments, metadata), 'ttml')} 
-                className="flex items-center gap-1.5 px-3 py-1 text-slate-400 hover:text-white text-[10px] font-bold transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1 text-slate-400 hover:text-white text-[10px] font-bold transition-colors whitespace-nowrap"
               >
                 <Code2 size={12} /> TTML
               </button>
             </div>
-            <button onClick={exportVideo} disabled={isExporting} className="flex items-center gap-2 px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold disabled:opacity-50">
+            <button onClick={exportVideo} disabled={isExporting} className="flex items-center gap-2 px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold disabled:opacity-50 shrink-0">
               {isExporting ? <Loader2 className="animate-spin" size={16} /> : <Video size={16} />} Export Video
             </button>
           </div>
@@ -366,13 +380,25 @@ const ResultsView: React.FC<ResultsViewProps> = ({
                   <button key={p.name} onClick={() => setBgColor(p.hex)} className={`w-6 h-6 rounded-full border ${bgColor === p.hex ? 'border-white scale-110' : 'border-transparent'}`} style={{ backgroundColor: p.hex }} />
                 ))}
               </div>
-              <div className="pt-2 border-t border-slate-800/50 space-y-2">
-                <div className="grid grid-cols-2 gap-2 p-1 bg-slate-800 rounded-lg">
-                  <button onClick={() => setSelectedModel('gemini-2.5-flash')} className={`py-1 text-[9px] font-bold rounded ${selectedModel === 'gemini-2.5-flash' ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}>2.5 Flash</button>
-                  <button onClick={() => setSelectedModel('gemini-3-flash-preview')} className={`py-1 text-[9px] font-bold rounded ${selectedModel === 'gemini-3-flash-preview' ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}>3 Flash</button>
+              <div className="pt-2 border-t border-slate-800/50 space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <p className="text-[8px] font-bold text-slate-500 uppercase ml-1">AI Engine</p>
+                    <div className="grid grid-cols-2 gap-1 p-1 bg-slate-800 rounded-lg border border-slate-700/50">
+                      <button onClick={() => setSelectedModel('gemini-2.5-flash')} className={`py-1 text-[9px] font-bold rounded ${selectedModel === 'gemini-2.5-flash' ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}>2.5 Flash</button>
+                      <button onClick={() => setSelectedModel('gemini-3-flash-preview')} className={`py-1 text-[9px] font-bold rounded ${selectedModel === 'gemini-3-flash-preview' ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}>3 Flash</button>
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-[8px] font-bold text-slate-500 uppercase ml-1">Granularity</p>
+                    <div className="grid grid-cols-2 gap-1 p-1 bg-slate-800 rounded-lg border border-slate-700/50">
+                      <button onClick={() => setTranscriptionMode('line')} className={`py-1 text-[9px] font-bold rounded ${transcriptionMode === 'line' ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}>Lines</button>
+                      <button onClick={() => setTranscriptionMode('word')} className={`py-1 text-[9px] font-bold rounded ${transcriptionMode === 'word' ? 'bg-indigo-600 text-white' : 'text-slate-500'}`}>Words</button>
+                    </div>
+                  </div>
                 </div>
-                <button onClick={onRetry} className="w-full flex items-center justify-center gap-2 py-1.5 bg-slate-800 text-white rounded-lg text-[10px] font-black border border-slate-700 hover:border-indigo-500/50">
-                  <RefreshCw size={12} /> Re-process Audio
+                <button onClick={onRetry} className="w-full flex items-center justify-center gap-2 py-1.5 bg-slate-800 text-white rounded-lg text-[10px] font-black border border-slate-700 hover:border-indigo-500/50 transition-colors">
+                  <RefreshCw size={12} /> Apply Settings & Re-process
                 </button>
               </div>
             </div>

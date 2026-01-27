@@ -21,7 +21,7 @@ export const formatToSRTTime = (seconds: number): string => {
   return `${pad(hour, 2)}:${pad(min, 2)}:${pad(sec, 2)},${pad(ms, 3)}`;
 };
 
-// Format: HH:MM:SS.mmm (TTML Standard)
+// Format: HH:MM:SS.mmm (TTML & VTT Standard)
 export const formatToTTMLTime = (seconds: number): string => {
   if (isNaN(seconds) || seconds < 0) return "00:00:00.000";
   
@@ -66,6 +66,29 @@ export const generateSRT = (segments: SubtitleSegment[]): string => {
   return segments.map((seg, index) => {
     return `${index + 1}\n${formatToSRTTime(seg.start)} --> ${formatToSRTTime(seg.end)}\n${seg.text}\n`;
   }).join('\n');
+};
+
+export const generateVTT = (segments: SubtitleSegment[]): string => {
+  const header = "WEBVTT\n\n";
+  const body = segments.map((seg, index) => {
+    const start = formatToTTMLTime(seg.start);
+    const end = formatToTTMLTime(seg.end);
+    let textContent = seg.text;
+
+    if (seg.words && seg.words.length > 0) {
+      // VTT Karaoke style: <HH:MM:SS.mmm>Word
+      textContent = seg.words.map((word, idx) => {
+        const isCJK = hasCJK(word.text);
+        const isLast = idx === (seg.words!.length - 1);
+        const suffix = (!isCJK && !isLast) ? " " : "";
+        return `<${formatToTTMLTime(word.start)}>${word.text}${suffix}`;
+      }).join('');
+    }
+
+    return `${index + 1}\n${start} --> ${end}\n${textContent}\n`;
+  }).join('\n');
+
+  return header + body;
 };
 
 export const generateLRC = (

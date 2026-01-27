@@ -274,6 +274,8 @@ const App: React.FC = () => {
             selectedModel={selectedModel}
             setSelectedModel={setSelectedModel}
             onRetry={handleTranscribe}
+            transcriptionMode={transcriptionMode}
+            setTranscriptionMode={setTranscriptionMode}
           />
         ) : (
           /* VIEW: INPUT / PROCESSING */
