@@ -184,24 +184,23 @@ export const transcribeAudio = async (
   if (mode === 'word') {
     modeInstructions = `
     KARAOKE/WORD-LEVEL MODE:
-    1. VERBATIM REPETITIONS: In conversational media, people often repeat words (e.g., "Wait, wait, let me..."). You MUST transcribe every instance of "wait".
+    1. VERBATIM REPETITIONS: In conversational media AND music, people often repeat words (e.g., "Wait, wait" or "Yeah, yeah"). You MUST transcribe every instance.
     2. UNIQUE WORD TIMESTAMPS: Every repeated word MUST have its own start/end time corresponding to its occurrence in the audio.
     3. HIERARCHY: Every word in the "words" array must fall strictly within the startTime/endTime of its parent segment.
-    4. CONVERSATIONAL FILLERS: Always include "uh", "um", "ah", etc.
     `;
   } else {
     modeInstructions = `
     SUBTITLE/LINE-LEVEL MODE:
-    1. READABILITY: Group speech into readable phrases (approx 2-6 seconds).
-    2. CONVERSATIONAL FLOW: Keep short repetitions (e.g., "Wait, wait") in the same segment.
-    3. BACKCHANNELING: Include acknowledgments ("Yeah", "Okay") if they don't break the flow.
-    4. NO SUMMARIZATION: Never skip repeated speech.
+    1. READABILITY: Group speech into readable phrases.
+    2. REPETITIVE LYRICS: If a song repeats a line (e.g. "Test test 1 2 3"), output a NEW segment for EACH repetition.
+    3. NO MERGING: Do not combine repeated lines into one segment with a long duration. Keep them separate.
+    4. IDENTICAL CONTENT: Consecutive segments having identical text is ALLOWED and EXPECTED.
     `;
   }
 
   const systemInstructions = `
-    You are a professional Court Reporter and Synchronizer. 
-    Your goal is to transcribe conversational media (audio/video) with 100% VERBATIM fidelity.
+    You are a professional Transcriber and Synchronizer. 
+    Your goal is to transcribe audio/video with 100% VERBATIM fidelity, regardless of repetition.
 
     TASK: Convert the media into a JSON object with timed segments.
     
@@ -209,11 +208,11 @@ export const transcribeAudio = async (
     
     ${modeInstructions}
 
-    CRITICAL RULES FOR LONG CONVERSATIONS (PREVENT SKIPPING):
-    1. **LINEAR PROCESSING**: Process the audio chronologically from 00:00:00 to the very end. Do NOT skip sections, do not summarize "boring" parts.
-    2. **REPEATED WORDS**: If a speaker stammers (e.g., "I- I- I- I didn't"), you MUST generate a separate word object for EACH repetition. Do NOT merge them into one "I".
-    3. **DISFLUENCIES**: Transcribe "um", "uh", "er" exactly as spoken.
-    4. **NO HALLUCINATIONS**: Only transcribe what is audible.
+    CRITICAL RULES (PREVENT SKIPPING):
+    1. **NO DEDUPLICATION**: Never remove a line because it was just said. If the speaker says "Hello" 50 times, output 50 segments of "Hello" with their unique timestamps.
+    2. **LINEAR PROCESSING**: Process the audio chronologically from 00:00:00 to the very end. Do NOT skip sections.
+    3. **REPEATED WORDS/PHRASES**: If a speaker stammers or sings a repeated chorus, generate a separate object for EACH repetition.
+    4. **DISFLUENCIES**: Transcribe "um", "uh", "er" exactly as spoken.
     5. **COMPLETE**: Ensure the last spoken sentence is included.
 
     OUTPUT: Return ONLY a valid JSON object.
