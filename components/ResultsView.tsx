@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { SubtitleSegment, AspectRatio, GeminiModel, TranscriptionMode } from '../types';
-import { generateLRC, generateEnhancedLRC, generateSRT, generateTTML, generateVTT, formatToDisplayTime, generateTXT } from '../utils/timeUtils';
+import { generateLRC, generateEnhancedLRC, generateSRT, generateTTML, generateVTT, formatToDisplayTime } from '../utils/timeUtils';
 import { 
   FileText, 
   Music, 
@@ -330,13 +330,6 @@ const ResultsView: React.FC<ResultsViewProps> = ({
           </div>
           <div className="flex gap-2">
             <div className="flex bg-slate-800 p-0.5 rounded-xl border border-slate-700 items-center overflow-x-auto no-scrollbar">
-              <button 
-                onClick={() => downloadTextFile(generateTXT(segments), 'txt')} 
-                className="flex items-center gap-1.5 px-3 py-1 text-slate-400 hover:text-white text-[10px] font-bold transition-colors whitespace-nowrap"
-              >
-                <AlignJustify size={12} /> TXT
-              </button>
-              <div className="h-3 w-px bg-slate-700 shrink-0"></div>
               <button 
                 onClick={() => downloadTextFile(generateSRT(segments), 'srt')} 
                 className="flex items-center gap-1.5 px-3 py-1 text-slate-400 hover:text-white text-[10px] font-bold transition-colors whitespace-nowrap"
