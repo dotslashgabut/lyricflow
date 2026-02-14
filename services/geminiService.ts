@@ -115,7 +115,14 @@ function tryRepairJson(jsonString: string): any {
   // 1. Basic cleanup: remove markdown and whitespace
   let clean = jsonString.replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/\s*```$/, '').trim();
 
-  // 2. Optimistic Parse
+  // Handle potentially empty input
+  if (!clean) return { segments: [] };
+
+  // 2. Fix Common JSON issues
+  // Remove trailing commas in objects/arrays (e.g., ", }" -> "}")
+  clean = clean.replace(/,\s*([\]}])/g, '$1');
+
+  // 3. Optimistic Parse
   try {
     const parsed = JSON.parse(clean);
     // Normalize format
@@ -123,25 +130,18 @@ function tryRepairJson(jsonString: string): any {
     if (Array.isArray(parsed)) return { segments: parsed };
     // If it's a single object that looks like a segment (rare), wrap it
     if (parsed.startTime && parsed.text) return { segments: [parsed] };
-    
-    // If we are here, it parsed but structure is unexpected.
-    // If it has segments but it's not an array?
-    if (parsed.segments) return parsed; // Trust it if it has the key
+    if (parsed.segments) return parsed;
   } catch (e) {
     // Continue to repair
   }
 
-  // 3. Truncation Repair
+  // 4. Truncation Repair
   // The response is likely truncated. We need to find the last valid segment closing brace '}'
-  // and append ']}' to close the JSON structure validly.
   // We search backwards from the end of the string.
   
-  // Limit the search to the last 2000 characters to be efficient, 
-  // though usually truncation happens at the very end.
   const searchLimit = Math.max(0, clean.length - 2000);
 
   for (let i = clean.length - 1; i >= searchLimit; i--) {
-    // Check for a closing brace
     if (clean[i] === '}') {
       const candidate = clean.substring(0, i + 1);
       
@@ -174,36 +174,44 @@ function tryRepairJson(jsonString: string): any {
     }
   }
 
-  // 4. Desperate Regex Fallback
-  // If JSON structure is irretrievably broken, try to scrape standard segment patterns.
+  // 5. Desperate Stream-based Regex Fallback
+  // If JSON structure is irretrievably broken, try to scrape key-value pairs.
+  // This approach is robust against broken structural braces or commas.
   try {
-    const segments = [];
-    // Matches: "startTime": "...", "endTime": "...", "text": "..."
-    // Note: This regex assumes standard ordering and no escaped quotes inside keys.
-    const regex = /"startTime"\s*:\s*"([^"]+)"[\s\S]*?"endTime"\s*:\s*"([^"]+)"[\s\S]*?"text"\s*:\s*"((?:[^"\\]|\\.)*)"/g;
+    const segments: any[] = [];
+    const keyValRegex = /"(\w+)"\s*:\s*"((?:[^"\\]|\\.)*)"/g;
     let match;
-    while ((match = regex.exec(clean)) !== null) {
-      if (match[1] && match[2] && match[3]) {
-        segments.push({
-          startTime: match[1],
-          endTime: match[2],
-          text: match[3]
-        });
-      }
+    let currentSegment: any = {};
+
+    while ((match = keyValRegex.exec(clean)) !== null) {
+        const key = match[1];
+        const val = match[2];
+        
+        if (key === 'startTime' || key === 'endTime' || key === 'text') {
+            currentSegment[key] = val;
+        }
+
+        // Check if we have a "complete" segment (assuming keys are somewhat grouped)
+        if (currentSegment.startTime && currentSegment.endTime && currentSegment.text) {
+             segments.push({ ...currentSegment });
+             // Soft reset, keep fields if next segment overrides them (rare) or full reset
+             currentSegment = {}; 
+        }
     }
     
     if (segments.length > 0) {
-      console.warn("Recovered " + segments.length + " segments using Regex fallback.");
+      console.warn("Recovered " + segments.length + " segments using Stream Regex fallback.");
       return { segments };
     }
   } catch (e) {
-    console.error("Regex fallback failed", e);
+    console.error("Stream Regex fallback failed", e);
   }
 
   throw new Error("Transcription response malformed. The conversation might be too complex or long.");
 }
 
 function timestampToSeconds(ts: string): number {
+  if (!ts) return 0;
   const parts = ts.split(':');
   if (parts.length === 3) {
       const h = parseFloat(parts[0]);
@@ -241,54 +249,56 @@ export const transcribeAudio = async (
     MODE: KARAOKE / WORD-LEVEL
     - Output a "words" array for every segment.
     - Capture every single repeated word as a distinct object with unique timestamps.
+    - Do not group repetitions.
     `;
   } else {
     modeInstructions = `
     MODE: SUBTITLE / LINE-LEVEL
     - Create a new segment for each line/phrase.
     - If a line is repeated, CREATE A NEW SEGMENT.
-    - DO NOT SUMMARIZE REPEATS.
+    - DO NOT MERGE REPEATS. 
+    - DO NOT USE "x2" or notations. WRITE IT OUT FULLY.
     `;
   }
 
   const oneShotExample = `
-    EXAMPLE OF START AND REPETITION:
-    Audio: [00:00-00:02] "Yeah yeah" [00:02-00:04] "Yeah yeah" [00:04-00:06] "Start now"
-    
-    CORRECT JSON:
+    EXAMPLE OF CONTINUITY HANDLING:
+    Audio: "Yeah" (0s) -> "Yeah" (1s) -> [Short Pause] -> "Party start" (3s)
+
+    CORRECT JSON OUTPUT:
     {
       "segments": [
-        { "id": 1, "startTime": "00:00:00.000", "endTime": "00:00:02.000", "text": "Yeah yeah" },
-        { "id": 2, "startTime": "00:00:02.000", "endTime": "00:00:04.000", "text": "Yeah yeah" },
-        { "id": 3, "startTime": "00:00:04.000", "endTime": "00:00:06.000", "text": "Start now" }
+        { "id": 1, "startTime": "00:00:00.000", "endTime": "00:00:01.000", "text": "Yeah" },
+        { "id": 2, "startTime": "00:00:01.000", "endTime": "00:00:02.000", "text": "Yeah" },
+        { "id": 3, "startTime": "00:00:03.000", "endTime": "00:00:04.500", "text": "Party start" }
       ]
     }
   `;
 
-  const persona = useThinking 
-    ? "ROLE: High-Precision Audio Transcription Engine."
-    : "ROLE: SYSTEM PROCESS ASR (Audio Speech Recognition). MODE: RAW DATA STREAM.";
+  const persona = "ROLE: RAW FORENSIC AUDIO TRANSCRIBER. VERBATIM MODE.";
 
   const systemInstructions = `
     ${persona}
     
     OBJECTIVE: 
-    Convert audio to a JSON log of the spoken/sung content.
+    Convert the ENTIRE audio file to a JSON log of the spoken/sung content.
+    The goal is RAW ACCURACY. Do not edit, summarize, or "clean up" the text.
     
     ${timingPolicy}
     
     ${modeInstructions}
 
-    CRITICAL RULES FOR ACCURACY:
-    1. **VERBATIM**: Transcribe exactly what is heard. Do not paraphrase.
-    2. **REPETITION HANDLING**: 
-       - If the audio contains "Yeah, yeah, yeah", transcribe "Yeah, yeah, yeah".
-       - **WARNING**: Do not get stuck in a generation loop. Only transcribe repetitions that actually exist in the audio file.
-    3. **START OF AUDIO**: 
-       - **IMPORTANT**: Begin transcribing from the very first second (00:00:00). 
-       - Do not skip the beginning. 
-       - If the audio starts immediately with lyrics or non-lexical vocables (e.g. "La la", "Ooh", "Na na"), capture them.
-    4. **NO HALLUCINATIONS**: Do not output text for instrumental sections. If there are no words, do not generate segments.
+    MANDATORY RULES FOR COMPLETENESS & REPETITION:
+    1. **PROCESS FULL DURATION**: You MUST transcribe from the start (00:00:00) to the very end of the audio file.
+    2. **DO NOT STOP EARLY**: Even if the audio starts with many repeated words (e.g., "Intro intro intro"), you must transcribe ALL of them and then CONTINUE to transcribe the rest of the song/speech.
+    3. **ABSOLUTE VERBATIM**: 
+       - If the singer says "No no no no no", you MUST write "No no no no no". 
+       - Do not write "No (x5)" or "No...".
+       - CAPTURE EVERY SINGLE REPETITION as individual text or segments.
+    4. **NO HALLUCINATIONS**: Do not generate text if there is silence or pure instrumental.
+
+    CRITICAL: 
+    Do not assume the audio is finished just because a section is repetitive. Listen until the stream ends.
 
     ${oneShotExample}
 
@@ -299,7 +309,7 @@ export const transcribeAudio = async (
   const requestConfig: any = {
     responseMimeType: "application/json",
     responseSchema: getTranscriptionSchema(mode),
-    temperature: 0.0, // Strict determinism for timestamps
+    temperature: 0.0, // Strict determinism
     maxOutputTokens: 8192,
   };
 
@@ -307,7 +317,7 @@ export const transcribeAudio = async (
     // Gemini 3 uses thinking to plan complex layouts
     requestConfig.thinkingConfig = { thinkingBudget: 2048 }; 
   } else {
-    // Gemini 2.5 Flash: Disable thinking to prevent over-analysis of repetitive loops
+    // Gemini 2.5 Flash: Disable thinking
     delete requestConfig.thinkingConfig;
   }
 
