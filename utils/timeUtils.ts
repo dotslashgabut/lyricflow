@@ -251,6 +251,20 @@ ${bodyContent}
 </tt>`;
 };
 
+export const generateTXT = (segments: SubtitleSegment[]): string => {
+  return segments.map((seg, i) => {
+    // If there is a significant gap (> 3s) to the next segment, treat it as a stanza break
+    if (i < segments.length - 1) {
+      const nextSeg = segments[i + 1];
+      const gap = nextSeg.start - seg.end;
+      if (gap > 3.0) {
+        return `${seg.text}\n`; 
+      }
+    }
+    return seg.text;
+  }).join('\n');
+};
+
 export const formatDuration = (seconds: number): string => {
   const m = Math.floor(seconds / 60);
   const s = Math.floor(seconds % 60);

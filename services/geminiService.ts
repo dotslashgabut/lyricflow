@@ -61,7 +61,8 @@ const getTranscriptionSchema = (mode: TranscriptionMode) => {
 function normalizeTimestamp(ts: string): string {
   if (!ts) return "00:00:00.000";
   
-  let clean = ts.trim().replace(/[^\d:.]/g, '');
+  // Replace comma with dot for standardizing (SRT uses comma, model might output it)
+  let clean = ts.trim().replace(',', '.').replace(/[^\d:.]/g, '');
   
   // Handle raw seconds (e.g. "12.5")
   if (!clean.includes(':') && /^[\d.]+$/.test(clean)) {
@@ -108,45 +109,61 @@ function normalizeTimestamp(ts: string): string {
 }
 
 function tryRepairJson(jsonString: string): any {
-  let trimmed = jsonString.trim();
-  trimmed = trimmed.replace(/^```json/, '').replace(/```$/, '').trim();
+  // 1. Clean Markdown
+  const jsonPattern = /```json([\s\S]*?)```/i;
+  let clean = jsonString;
+  const match = jsonString.match(jsonPattern);
+  if (match) {
+    clean = match[1];
+  } else {
+    clean = jsonString.replace(/^```json/i, '').replace(/```$/i, '');
+  }
+  clean = clean.trim();
 
+  // 2. Try Direct Parse
   try {
-    return JSON.parse(trimmed);
+    return JSON.parse(clean);
   } catch (e) {
-    console.warn("Initial JSON parse failed, attempting deep repair...");
+    console.warn("Initial JSON parse failed, attempting repairs...");
   }
 
-  if (trimmed.includes('"segments"')) {
-    const lastClosingBrace = trimmed.lastIndexOf('}');
-    const lastClosingBracket = trimmed.lastIndexOf(']');
+  // 3. Find valid JSON substring (Start from the first '{')
+  const firstBrace = clean.indexOf('{');
+  if (firstBrace === -1) {
+    throw new Error("No JSON structure found in response.");
+  }
+
+  // We search for the LAST closing brace '}'.
+  // If parsing fails, we might be dealing with truncation or extra garbage at the end.
+  // We iteratively try to parse substrings ending at different '}' positions.
+  
+  let endIdx = clean.lastIndexOf('}');
+  
+  // Safety valve: only try the last few closing braces to avoid performance issues on huge strings
+  let attempts = 0;
+  
+  while (endIdx > firstBrace && attempts < 10) {
+    const candidate = clean.substring(firstBrace, endIdx + 1);
     
-    if (lastClosingBrace !== -1) {
-      let candidate = trimmed.substring(0, lastClosingBrace + 1);
-      if (lastClosingBracket < lastClosingBrace) {
-        candidate += ']}';
-      } else {
-        candidate += '}';
-      }
-      try {
-        const parsed = JSON.parse(candidate);
-        if (parsed.segments) return parsed;
-      } catch (err) {}
+    // Attempt 1: Just the substring
+    try {
+      return JSON.parse(candidate);
+    } catch(e) {}
+
+    // Attempt 2: Truncated array? Try adding ']}'
+    // Only if it looks like we are inside a segments array
+    if (candidate.includes('"segments"')) {
+       try {
+         return JSON.parse(candidate + ']}');
+       } catch(e) {}
     }
+
+    // Move to the previous closing brace
+    endIdx = clean.lastIndexOf('}', endIdx - 1);
+    attempts++;
   }
 
-  const arrayStart = trimmed.indexOf('[');
-  if (arrayStart !== -1) {
-    for (let i = trimmed.length; i > arrayStart; i--) {
-      try {
-        const sub = trimmed.substring(arrayStart, i);
-        const parsed = JSON.parse(sub);
-        if (Array.isArray(parsed)) return { segments: parsed };
-      } catch (err) {}
-    }
-  }
-
-  throw new Error("Transcription response malformed. The conversation might be too complex or long.");
+  throw new Error("Transcription response malformed and unrecoverable.");
 }
 
 function timestampToSeconds(ts: string): number {
@@ -172,9 +189,6 @@ export const transcribeAudio = async (
 
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
-  // CRITICAL FIX: Gemini 2.5 Flash works BEST as a raw machine for ASR without 'thinking'.
-  // 'Thinking' on 2.5 Flash for repetitive audio often leads to hallucinated "loop detection" rejections.
-  // Gemini 3 Flash benefits from thinking to handle complex mapping, but 2.5 should stay "dumb" and direct.
   const useThinking = modelName.includes('gemini-3'); 
 
   const timingPolicy = `
@@ -182,7 +196,6 @@ export const transcribeAudio = async (
     1. FORMAT: **HH:MM:SS.mmm** (e.g., 00:00:12.450).
     2. CONTINUITY: Timestamps must NOT jump. The endTime of Segment N should be close to startTime of Segment N+1.
     3. START ZERO: The first segment MUST correspond to the absolute start of the audio.
-    4. NO HALLUCINATION: Do not invent time gaps. If the audio is continuous, the timestamps must be continuous.
   `;
 
   let modeInstructions = "";
@@ -215,7 +228,6 @@ export const transcribeAudio = async (
     }
   `;
 
-  // Specific "Machine Mode" for 2.5 Flash to prevent rejection/summarization
   const persona = useThinking 
     ? "ROLE: High-Precision Audio Transcription Engine."
     : "ROLE: SYSTEM PROCESS ASR (Audio Speech Recognition). MODE: RAW DATA STREAM.";
@@ -246,23 +258,15 @@ export const transcribeAudio = async (
   const requestConfig: any = {
     responseMimeType: "application/json",
     responseSchema: getTranscriptionSchema(mode),
-    temperature: 0.0, // Strict determinism for timestamps
+    temperature: 0.0,
     maxOutputTokens: 8192,
-    safetySettings: [
-      { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
-      { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
-      { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
-      { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
-      { category: 'HARM_CATEGORY_CIVIC_INTEGRITY', threshold: 'BLOCK_NONE' }
-    ]
   };
 
   if (useThinking) {
     // Gemini 3 uses thinking to plan complex layouts
     requestConfig.thinkingConfig = { thinkingBudget: 2048 }; 
   } else {
-    // Gemini 2.5 Flash: Disable thinking to prevent over-analysis of repetitive loops
-    // and rely on raw ASR pattern matching.
+    // Gemini 2.5 Flash: Disable thinking
     delete requestConfig.thinkingConfig;
   }
 
