@@ -167,7 +167,8 @@ function tryRepairJson(jsonString: string): any {
 
       // Strategy C: Maybe it was just { ... } and we found the end
       try {
-        const parsed = JSON.parse(candidate);
+        const patched = candidate + '}';
+        const parsed = JSON.parse(patched);
         if (parsed.segments) return parsed;
       } catch (e) {}
     }
@@ -231,8 +232,7 @@ export const transcribeAudio = async (
     TIMING PRECISION RULES:
     1. FORMAT: **HH:MM:SS.mmm** (e.g., 00:00:12.450). Use DOT (.) for milliseconds.
     2. CONTINUITY: Timestamps must NOT jump. The endTime of Segment N should be close to startTime of Segment N+1.
-    3. START ZERO: The first segment MUST correspond to the absolute start of the audio.
-    4. NO HALLUCINATION: Do not invent time gaps. If the audio is continuous, the timestamps must be continuous.
+    3. NO HALLUCINATION: Do not invent time gaps. If the audio is continuous, the timestamps must be continuous.
   `;
 
   let modeInstructions = "";
@@ -252,15 +252,15 @@ export const transcribeAudio = async (
   }
 
   const oneShotExample = `
-    EXAMPLE OF REPETITIVE AUDIO HANDLING:
-    Audio: "Work it harder (0s-2s), make it better (2s-4s), do it faster (4s-6s)"
+    EXAMPLE OF START AND REPETITION:
+    Audio: [00:00-00:02] "Yeah yeah" [00:02-00:04] "Yeah yeah" [00:04-00:06] "Start now"
     
-    CORRECT:
+    CORRECT JSON:
     {
       "segments": [
-        { "id": 1, "startTime": "00:00:00.000", "endTime": "00:00:02.000", "text": "Work it harder" },
-        { "id": 2, "startTime": "00:00:02.000", "endTime": "00:00:04.000", "text": "make it better" },
-        { "id": 3, "startTime": "00:00:04.000", "endTime": "00:00:06.000", "text": "do it faster" }
+        { "id": 1, "startTime": "00:00:00.000", "endTime": "00:00:02.000", "text": "Yeah yeah" },
+        { "id": 2, "startTime": "00:00:02.000", "endTime": "00:00:04.000", "text": "Yeah yeah" },
+        { "id": 3, "startTime": "00:00:04.000", "endTime": "00:00:06.000", "text": "Start now" }
       ]
     }
   `;
@@ -273,18 +273,22 @@ export const transcribeAudio = async (
     ${persona}
     
     OBJECTIVE: 
-    Convert audio to a JSON log. 
-    Focus on PRECISE TIMING and COMPLETENESS.
+    Convert audio to a JSON log of the spoken/sung content.
     
     ${timingPolicy}
     
     ${modeInstructions}
 
-    CRITICAL INSTRUCTIONS FOR REPETITIVE AUDIO (LOOPS):
-    1. **TRUST THE AUDIO**: Even if the text is "Test 1 2 3" repeated 50 times, transcribe it 50 times.
-    2. **NO FILTERING**: Do not reject the audio as "spam" or "test". Transcribe exactly what is heard.
-    3. **NO TIMESTAMPS JUMPS**: Ensure the timestamps match the actual flow of audio. Do not skip 10 seconds ahead randomly.
-    4. **CAPTURE INTRO**: Start listening from 00:00:00.
+    CRITICAL RULES FOR ACCURACY:
+    1. **VERBATIM**: Transcribe exactly what is heard. Do not paraphrase.
+    2. **REPETITION HANDLING**: 
+       - If the audio contains "Yeah, yeah, yeah", transcribe "Yeah, yeah, yeah".
+       - **WARNING**: Do not get stuck in a generation loop. Only transcribe repetitions that actually exist in the audio file.
+    3. **START OF AUDIO**: 
+       - **IMPORTANT**: Begin transcribing from the very first second (00:00:00). 
+       - Do not skip the beginning. 
+       - If the audio starts immediately with lyrics or non-lexical vocables (e.g. "La la", "Ooh", "Na na"), capture them.
+    4. **NO HALLUCINATIONS**: Do not output text for instrumental sections. If there are no words, do not generate segments.
 
     ${oneShotExample}
 
