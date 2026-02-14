@@ -75,6 +75,24 @@ export const formatToDisplayTime = (seconds: number): string => {
   return `${pad(min, 2)}:${pad(sec, 2)}.${pad(ms, 3)}`;
 };
 
+export const generateTXT = (segments: SubtitleSegment[]): string => {
+  let output = "";
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i];
+    output += seg.text.trim() + "\n";
+
+    if (i < segments.length - 1) {
+      const nextSeg = segments[i + 1];
+      const gap = nextSeg.start - seg.end;
+      // If gap is significant (e.g. >= 3 seconds), add a blank line for stanza separation
+      if (gap >= 3.0) {
+        output += "\n";
+      }
+    }
+  }
+  return output;
+};
+
 export const generateSRT = (segments: SubtitleSegment[]): string => {
   return segments.map((seg, index) => {
     return `${index + 1}\n${formatToSRTTime(seg.start)} --> ${formatToSRTTime(seg.end)}\n${seg.text}\n`;
