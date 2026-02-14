@@ -61,7 +61,11 @@ const getTranscriptionSchema = (mode: TranscriptionMode) => {
 function normalizeTimestamp(ts: string): string {
   if (!ts) return "00:00:00.000";
   
-  let clean = ts.trim().replace(/[^\d:.]/g, '');
+  // FIX: Replace comma with dot (SRT format compatibility) to prevent parsing errors
+  let clean = ts.trim().replace(/,/g, '.');
+  
+  // Clean up non-numeric characters except colon and dot
+  clean = clean.replace(/[^\d:.]/g, '');
   
   // Handle raw seconds (e.g. "12.5")
   if (!clean.includes(':') && /^[\d.]+$/.test(clean)) {
@@ -170,16 +174,31 @@ function tryRepairJson(jsonString: string): any {
   }
 
   // 4. Desperate Regex Fallback
-  // If parsing fails completely, try to extract segment-like objects using Regex.
-  // This is risky for nested objects (words) but better than failure.
-  // We look for objects containing "id", "startTime", "endTime", "text".
-  const extractedSegments: any[] = [];
-  // Regex matches { "id": ... } blocks. 
-  // We use a simplified check to avoid ReDoS or complexity with nested braces.
-  // We split by "id": and reconstruct.
-  
-  // Actually, a simpler fallback for users:
-  // Throw error but hint it might be partial.
+  // If JSON structure is irretrievably broken, try to scrape standard segment patterns.
+  try {
+    const segments = [];
+    // Matches: "startTime": "...", "endTime": "...", "text": "..."
+    // Note: This regex assumes standard ordering and no escaped quotes inside keys.
+    const regex = /"startTime"\s*:\s*"([^"]+)"[\s\S]*?"endTime"\s*:\s*"([^"]+)"[\s\S]*?"text"\s*:\s*"((?:[^"\\]|\\.)*)"/g;
+    let match;
+    while ((match = regex.exec(clean)) !== null) {
+      if (match[1] && match[2] && match[3]) {
+        segments.push({
+          startTime: match[1],
+          endTime: match[2],
+          text: match[3]
+        });
+      }
+    }
+    
+    if (segments.length > 0) {
+      console.warn("Recovered " + segments.length + " segments using Regex fallback.");
+      return { segments };
+    }
+  } catch (e) {
+    console.error("Regex fallback failed", e);
+  }
+
   throw new Error("Transcription response malformed. The conversation might be too complex or long.");
 }
 
@@ -210,7 +229,7 @@ export const transcribeAudio = async (
 
   const timingPolicy = `
     TIMING PRECISION RULES:
-    1. FORMAT: **HH:MM:SS.mmm** (e.g., 00:00:12.450).
+    1. FORMAT: **HH:MM:SS.mmm** (e.g., 00:00:12.450). Use DOT (.) for milliseconds.
     2. CONTINUITY: Timestamps must NOT jump. The endTime of Segment N should be close to startTime of Segment N+1.
     3. START ZERO: The first segment MUST correspond to the absolute start of the audio.
     4. NO HALLUCINATION: Do not invent time gaps. If the audio is continuous, the timestamps must be continuous.
